@@ -10,14 +10,40 @@
   "orientation": "any",
   "background_color": "#FBF8F3",
   "theme_color": "#2B2219",
-  "categories": ["business", "productivity"],
+  "categories": [
+    "business",
+    "productivity"
+  ],
   "icons": [
-    { "src": "icons/icona-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icona-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "./icona-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icona-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icona-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ],
   "shortcuts": [
-    { "name": "Nuovo appuntamento", "short_name": "Appuntamento", "url": "./index.html?azione=nuovo" },
-    { "name": "Promemoria di domani", "short_name": "Promemoria", "url": "./index.html?vista=promemoria" }
+    {
+      "name": "Nuovo appuntamento",
+      "short_name": "Appuntamento",
+      "url": "./index.html?azione=nuovo"
+    },
+    {
+      "name": "Promemoria di domani",
+      "short_name": "Promemoria",
+      "url": "./index.html?vista=promemoria"
+    }
   ]
 }

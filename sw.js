@@ -3,27 +3,15 @@
    Non tocca in alcun modo i DATI (clienti, appuntamenti, impostazioni):
    quelli vivono in IndexedDB e sopravvivono a ogni aggiornamento. */
 
-const VERSIONE = 'charme-v1.0.0';
+const VERSIONE = 'charme-v1.0.1';
 
 const RISORSE = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './css/style.css',
-  './js/app.js',
-  './js/db.js',
-  './js/impostazioni.js',
-  './js/store.js',
-  './js/ui.js',
-  './js/util.js',
-  './js/whatsapp.js',
-  './js/views/agenda.js',
-  './js/views/clienti.js',
-  './js/views/nuovo.js',
-  './js/views/promemoria.js',
-  './js/views/impostazioni.js',
-  './icons/icona-192.png',
-  './icons/icona-512.png'
+  './version.json',
+  './icona-192.png',
+  './icona-512.png'
 ];
 
 self.addEventListener('install', (e) => {
