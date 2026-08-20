@@ -1,0 +1,34 @@
+CHARME — Agenda e clienti di Charme Parrucchieri
+================================================
+Versione 1.0.0 (Fase 1) — 20 agosto 2026
+
+CHE COS'È QUESTA CARTELLA
+Il codice dell'applicazione. Nient'altro.
+I dati (clienti, appuntamenti, listino, impostazioni) NON stanno qui:
+vivono dentro il tablet, in un archivio separato, e non vengono mai
+toccati quando si sostituisce questa cartella con una versione nuova.
+
+COME SI INSTALLA
+Segui la guida "GUIDA-INSTALLAZIONE.md" allegata al messaggio.
+In breve: carica il CONTENUTO di questa cartella su uno spazio web
+gratuito, apri l'indirizzo dal tablet una volta sola e tocca "Installa".
+
+COME SI AGGIORNA
+Sostituisci i file con quelli della versione nuova, allo stesso indirizzo.
+L'app se ne accorge da sola e propone l'aggiornamento.
+I dati restano dove sono.
+
+CONTENUTO
+  index.html              la pagina dell'app
+  manifest.webmanifest    dice ad Android come installarla
+  sw.js                   fa funzionare l'app senza rete
+  version.json            numero di versione
+  css/style.css           aspetto grafico
+  js/                     il programma
+    db.js                 archivio dati e migrazioni
+    impostazioni.js       valori predefiniti e listino di esempio
+    store.js              regole (appuntamenti, orari liberi, conflitti)
+    whatsapp.js           composizione dei messaggi
+    util.js  ui.js  app.js
+    views/                le schermate
+  icons/                  icone dell'app

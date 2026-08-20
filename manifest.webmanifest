@@ -1,0 +1,23 @@
+{
+  "name": "Charme Parrucchieri",
+  "short_name": "Charme",
+  "description": "Agenda e clienti di Charme Parrucchieri",
+  "lang": "it",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FBF8F3",
+  "theme_color": "#2B2219",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "icons/icona-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icona-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Nuovo appuntamento", "short_name": "Appuntamento", "url": "./index.html?azione=nuovo" },
+    { "name": "Promemoria di domani", "short_name": "Promemoria", "url": "./index.html?vista=promemoria" }
+  ]
+}
