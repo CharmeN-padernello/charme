@@ -3,7 +3,7 @@
    Non tocca in alcun modo i DATI (clienti, appuntamenti, impostazioni):
    quelli vivono in IndexedDB e sopravvivono a ogni aggiornamento. */
 
-const VERSIONE = 'charme-v1.0.1';
+const VERSIONE = 'charme-v1.1.1';
 
 const RISORSE = [
   './',

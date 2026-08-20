@@ -1,6 +1,6 @@
 {
-  "versione": "1.0.1",
-  "fase": 1,
+  "versione": "1.1.1",
+  "fase": 2,
   "pubblicata": "2026-08-20",
-  "note": "Versione a file singoli: nessuna cartella da caricare."
+  "note": "Corretto il blocco all avvio dopo il primo backup."
 }

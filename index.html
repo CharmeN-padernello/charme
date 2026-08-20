@@ -1564,6 +1564,17 @@ const PREDEFINITE = {
     tempiPosa: [10, 15, 20, 25, 30, 35, 40, 45]
   },
 
+  ponte: {
+    attivo: false,
+    indirizzo: '',            // https://charme-ponte.<tuonome>.workers.dev
+    chiaveScrittura: '',      // usata solo dal tablet per inviare
+    chiaveLettura: '',        // serve solo a comporre i link per il telefono
+    ultimaSincronizzazione: null,
+    ultimoErrore: null,
+    inSospeso: false,
+    ultimoConteggio: null
+  },
+
   backup: {
     oraPromemoria: '19:30',
     giorniAvviso: 3,        // dopo quanti giorni senza backup compare l'avviso
@@ -1612,24 +1623,66 @@ const SERVIZI_ESEMPIO = [
 
 let _cache = null;
 
-/** Unione profonda: le chiavi nuove introdotte da un aggiornamento compaiono
-    con il loro valore predefinito, quelle già personalizzate restano. */
+/**
+ * Unione profonda fra i valori predefiniti e quelli salvati.
+ * Le chiavi nuove introdotte da un aggiornamento compaiono con il loro valore
+ * predefinito; quelle già personalizzate restano come sono.
+ *
+ * Attenzione ai casi limite, che qui sono la norma e non l'eccezione:
+ * molti valori predefiniti sono null (logo, ultimoBackup, ultimaSincronizzazione)
+ * e diventano una stringa o un oggetto appena vengono usati la prima volta.
+ * In JavaScript `typeof null` vale 'object', quindi un null predefinito va
+ * riconosciuto PRIMA di trattarlo come un oggetto da percorrere.
+ */
 function unisci(predefinito, salvato) {
-  if (salvato == null) return structuredClone(predefinito);
+  // mai salvato: vale il predefinito
+  if (salvato === undefined) return structuredClone(predefinito);
+
+  // il predefinito è null o un valore semplice: comanda quello salvato
+  if (predefinito === null || typeof predefinito !== 'object') return salvato;
+
+  // elenchi: si prendono interi, non si fondono voce per voce
   if (Array.isArray(predefinito)) return Array.isArray(salvato) ? salvato : structuredClone(predefinito);
-  if (typeof predefinito !== 'object') return salvato;
+
+  // il predefinito è un oggetto ma il salvato no: dato incoerente, si riparte dal predefinito
+  if (salvato === null || typeof salvato !== 'object' || Array.isArray(salvato)) {
+    return structuredClone(predefinito);
+  }
+
   const out = {};
   for (const k of Object.keys(predefinito)) out[k] = unisci(predefinito[k], salvato[k]);
   for (const k of Object.keys(salvato)) if (!(k in out)) out[k] = salvato[k];
   return out;
 }
 
+/**
+ * Carica le impostazioni.
+ * Nessun problema qui dentro può impedire di aprire l'app: se una sezione è
+ * illeggibile si riparte dai valori predefiniti per quella sola sezione, e si
+ * va avanti. L'agenda del giorno vale più di un'impostazione.
+ */
 async function carica() {
-  const righe = await db.leggiTutti('impostazioni');
-  const salvate = Object.fromEntries(righe.map(r => [r.chiave, r.valore]));
+  let salvate = {};
+  try {
+    const righe = await db.leggiTutti('impostazioni');
+    salvate = Object.fromEntries(righe.map(r => [r.chiave, r.valore]));
+  } catch (e) {
+    console.error('[Charme] impostazioni illeggibili, si usano i valori predefiniti', e);
+  }
+
   _cache = {};
+  const sezioniRecuperate = [];
   for (const sezione of Object.keys(PREDEFINITE)) {
-    _cache[sezione] = unisci(PREDEFINITE[sezione], salvate[sezione]);
+    try {
+      _cache[sezione] = unisci(PREDEFINITE[sezione], salvate[sezione]);
+    } catch (e) {
+      console.error(`[Charme] sezione impostazioni "${sezione}" non valida, ripristinata`, e);
+      _cache[sezione] = structuredClone(PREDEFINITE[sezione]);
+      sezioniRecuperate.push(sezione);
+    }
+  }
+  if (sezioniRecuperate.length) {
+    _cache._sezioniRecuperate = sezioniRecuperate;
   }
   return _cache;
 }
@@ -2388,6 +2441,278 @@ async function giornataCompleta(data) {
 return { applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, giornataCompleta, leggiAppuntamento, leggiCliente, listinoPerCategoria, orariLiberi, primoOrarioUtile, promemoriaDaInviare, riepilogoGiorno, riordinaServizi, salvaAppuntamento, salvaCategoria, salvaCliente, salvaServizio, segnaMessaggioInviato, storicoCliente, verificaConflitti };
 })();
 
+/* ======================= js/ponte.js ======================= */
+MOD.ponte = (function () {
+/* Charme — ponte verso il telefono
+   ---------------------------------------------------------------------------
+   Manda al server una copia dell'agenda, perché Claude possa consultarla dal
+   telefono. Va in una direzione sola: da qui verso il server. Nulla di quello
+   che sta sul server può modificare i dati del tablet.
+
+   I riepiloghi (visite, incassi, classifiche) vengono calcolati QUI, dove i
+   dati ci sono tutti e non ci sono limiti di tempo di calcolo: il server deve
+   solo servirli.
+   --------------------------------------------------------------------------- */
+
+const db = MOD.db;
+const store = MOD.store;
+const cfg = MOD.cfgApp;
+const { dayKey, addDays, nomeCompleto, normalizza, isoLocale, telefonoLeggibile } = MOD.util;
+
+const GIORNI_STORICO = 550;   // ~18 mesi di appuntamenti passati nel pacchetto
+const GIORNI_FUTURO  = 400;
+const ATTESA_INVIO   = 8000;  // si aspetta che finisca di digitare prima di inviare
+
+let temporizzatore = null;
+let invioInCorso = false;
+let daRinviare = false;
+
+/* ---------- costruzione del pacchetto ---------- */
+
+async function costruisciPacchetto() {
+  const [clienti, appuntamenti] = await Promise.all([
+    store.elencoClienti(),
+    db.leggiTutti('appuntamenti')
+  ]);
+
+  const oggi = dayKey(new Date());
+  const daGiorno = dayKey(addDays(new Date(), -GIORNI_STORICO));
+  const aGiorno  = dayKey(addDays(new Date(), GIORNI_FUTURO));
+
+  const perId = Object.fromEntries(clienti.map(c => [c.id, c]));
+
+  /* --- agenda --- */
+  const agenda = appuntamenti
+    .filter(a => a.giorno >= daGiorno && a.giorno <= aGiorno)
+    .sort((x, y) => x.inizio.localeCompare(y.inizio))
+    .map(a => {
+      const c = perId[a.clienteId];
+      const riga = {
+        giorno: a.giorno,
+        ora: a.inizio.slice(11),
+        cliente: c ? nomeCompleto(c) : 'cliente eliminata',
+        telefono: c && c.telefono ? telefonoLeggibile(c.telefono) : '',
+        servizi: (a.servizi || []).map(s => s.nome),
+        durata: a.durata,
+        posa: a.posaMinuti || 0,
+        prezzo: Number(a.prezzo) || 0,
+        stato: a.stato
+      };
+      if (a.note) riga.note = a.note;
+      if (c && c.allergie) riga.allergie = c.allergie;
+      return riga;
+    });
+
+  /* --- clienti, con i riepiloghi già calcolati --- */
+  const perCliente = {};
+  for (const a of appuntamenti) {
+    (perCliente[a.clienteId] ||= []).push(a);
+  }
+
+  const elencoClienti = clienti.map(c => {
+    const suoi = perCliente[c.id] || [];
+    const conclusi = suoi.filter(a => a.stato === 'concluso' ||
+                                     (a.stato === 'previsto' && a.inizio < isoLocale(new Date())));
+    const totale = conclusi.reduce((s, a) => s + (Number(a.prezzo) || 0), 0);
+    const date = conclusi.map(a => a.giorno).sort();
+
+    const conteggio = {};
+    for (const a of conclusi) {
+      for (const s of (a.servizi || [])) conteggio[s.nome] = (conteggio[s.nome] || 0) + 1;
+    }
+
+    const riga = {
+      nome: nomeCompleto(c),
+      telefono: c.telefono ? telefonoLeggibile(c.telefono) : '',
+      visite: conclusi.length,
+      totale: Math.round(totale * 100) / 100,
+      media: conclusi.length ? Math.round((totale / conclusi.length) * 100) / 100 : 0,
+      ultima: date.length ? date[date.length - 1] : null,
+      promemoria: !!c.promemoriaAttivo,
+      serviziAbituali: Object.entries(conteggio).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0])
+    };
+    if (c.allergie) riga.allergie = c.allergie;
+    if (c.note) riga.note = c.note;
+    return riga;
+  });
+
+  /* --- statistiche --- */
+  const perMese = {};
+  const perServizio = {};
+  const limiteServizi = dayKey(addDays(new Date(), -365));
+
+  for (const a of appuntamenti) {
+    if (a.stato !== 'concluso') continue;
+    const mese = a.giorno.slice(0, 7);
+    perMese[mese] ||= { incasso: 0, appuntamenti: 0 };
+    perMese[mese].incasso += Number(a.prezzo) || 0;
+    perMese[mese].appuntamenti++;
+
+    if (a.giorno >= limiteServizi) {
+      for (const s of (a.servizi || [])) {
+        perServizio[s.nome] ||= { nome: s.nome, volte: 0, incasso: 0 };
+        perServizio[s.nome].volte++;
+        perServizio[s.nome].incasso += Number(s.prezzo) || 0;
+      }
+    }
+  }
+  for (const m of Object.values(perMese)) m.incasso = Math.round(m.incasso * 100) / 100;
+
+  const agendaCfg = cfg.get('agenda');
+  return {
+    formato: 'charme-ponte',
+    versione: 1,
+    negozio: cfg.get('negozio').nome,
+    oraInizio: agendaCfg.oraInizio,
+    oraFine: agendaCfg.oraFine,
+    periodo: { da: daGiorno, a: aGiorno },
+    agenda,
+    clienti: elencoClienti,
+    statistiche: {
+      perMese,
+      servizi: Object.values(perServizio).map(s => ({ ...s, incasso: Math.round(s.incasso) })),
+      mesiConsiderati: 12
+    }
+  };
+}
+
+/* ---------- invio ---------- */
+
+function indirizzoSync() {
+  const p = cfg.get('ponte');
+  if (!p.attivo || !p.indirizzo || !p.chiaveScrittura) return null;
+  const base = p.indirizzo.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return null;
+  return `${base}/${p.chiaveScrittura.trim()}/sync`;
+}
+
+function configurato() { return !!indirizzoSync(); }
+
+function indirizzoConsultazione() {
+  const p = cfg.get('ponte');
+  if (!p.indirizzo || !p.chiaveLettura) return null;
+  return `${p.indirizzo.trim().replace(/\/+$/, '')}/${p.chiaveLettura.trim()}/agenda`;
+}
+
+function indirizzoConnettore() {
+  const p = cfg.get('ponte');
+  if (!p.indirizzo || !p.chiaveLettura) return null;
+  return `${p.indirizzo.trim().replace(/\/+$/, '')}/${p.chiaveLettura.trim()}/mcp`;
+}
+
+/**
+ * Invia adesso. Restituisce { ok, messaggio, dettagli }.
+ * Non solleva mai eccezioni: un ponte che non risponde non deve disturbare
+ * chi sta lavorando in negozio.
+ */
+async function sincronizza({ manuale = false } = {}) {
+  const url = indirizzoSync();
+  if (!url) return { ok: false, messaggio: 'Ponte non configurato' };
+
+  if (invioInCorso) { daRinviare = true; return { ok: true, messaggio: 'invio già in corso' }; }
+  invioInCorso = true;
+
+  try {
+    const pacchetto = await costruisciPacchetto();
+    const controllore = new AbortController();
+    const scadenza = setTimeout(() => controllore.abort(), 20000);
+
+    const risposta = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pacchetto),
+      signal: controllore.signal,
+      cache: 'no-store'
+    });
+    clearTimeout(scadenza);
+
+    if (!risposta.ok) {
+      const testo = await risposta.text().catch(() => '');
+      throw new Error(`il server ha risposto ${risposta.status}${testo ? ' — ' + testo.slice(0, 120) : ''}`);
+    }
+    const esito = await risposta.json();
+
+    await cfg.imposta('ponte', {
+      ultimaSincronizzazione: new Date().toISOString(),
+      ultimoErrore: null,
+      inSospeso: false,
+      ultimoConteggio: esito.ricevuti || null
+    });
+    document.dispatchEvent(new CustomEvent('ponte:cambiato'));
+    return { ok: true, messaggio: 'Agenda inviata', dettagli: esito.ricevuti };
+
+  } catch (e) {
+    const motivo = e.name === 'AbortError'
+      ? 'il server non ha risposto in tempo'
+      : (e.message || 'errore di rete');
+    await cfg.imposta('ponte', { ultimoErrore: motivo, inSospeso: true });
+    document.dispatchEvent(new CustomEvent('ponte:cambiato'));
+    return { ok: false, messaggio: motivo };
+
+  } finally {
+    invioInCorso = false;
+    if (daRinviare) { daRinviare = false; programma(1500); }
+  }
+}
+
+/** Prova la connessione senza inviare tutto l'archivio. */
+async function prova() {
+  const url = indirizzoSync();
+  if (!url) return { ok: false, messaggio: 'Indirizzo o chiave mancanti' };
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formato: 'charme-ponte', versione: 1, agenda: [], clienti: [], statistiche: {} }),
+      cache: 'no-store'
+    });
+    if (r.status === 404) return { ok: false, messaggio: 'Indirizzo o chiave di scrittura errati (il server risponde "non trovato")' };
+    if (!r.ok) return { ok: false, messaggio: `Il server ha risposto ${r.status}` };
+    return { ok: true, messaggio: 'Il ponte risponde. Ora invio l\'agenda vera.' };
+  } catch (e) {
+    return { ok: false, messaggio: 'Non raggiungibile: ' + (e.message || 'errore di rete') };
+  }
+}
+
+/* ---------- automatismo ---------- */
+
+function programma(attesa = ATTESA_INVIO) {
+  if (!configurato()) return;
+  clearTimeout(temporizzatore);
+  temporizzatore = setTimeout(() => sincronizza(), attesa);
+}
+
+function avvia() {
+  // a ogni modifica dei dati, con un po' di calma per non inviare a ogni tasto
+  document.addEventListener('dati:cambiati', () => programma());
+  document.addEventListener('impostazioni:cambiate', (e) => {
+    if (e.detail && e.detail.sezione === 'ponte') programma(2000);
+  });
+
+  // quando torna la rete, si recupera quello che era rimasto in sospeso
+  window.addEventListener('online', () => {
+    if (cfg.get('ponte').inSospeso) programma(2500);
+  });
+
+  // riapertura dell'app e controllo periodico di sicurezza
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && cfg.get('ponte').inSospeso) programma(3000);
+  });
+  setInterval(() => { if (cfg.get('ponte').inSospeso) sincronizza(); }, 15 * 60 * 1000);
+
+  if (configurato()) programma(4000);
+}
+
+/** Da quante ore il ponte non riceve dati (null se mai sincronizzato o spento). */
+function oreDaUltimaSincronizzazione() {
+  const p = cfg.get('ponte');
+  if (!p.attivo || !p.ultimaSincronizzazione) return null;
+  return (Date.now() - Date.parse(p.ultimaSincronizzazione)) / 3600000;
+}
+
+return { avvia, configurato, costruisciPacchetto, indirizzoConnettore, indirizzoConsultazione, oreDaUltimaSincronizzazione, prova, sincronizza };
+})();
+
 /* ======================= js/views/agenda.js ======================= */
 MOD.vAgenda = (function () {
 /* Charme — vista Agenda: la giornata ora per ora. */
@@ -2396,6 +2721,7 @@ const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
+const ponte = MOD.ponte;
 const { dataEstesa, ora, euro, esc, addDays, dayKey, isToday, minutiDaHHMM, hhmmDaMinuti, durataUmana, nomeCompleto, iniziali, daIsoLocale, telefonoLeggibile } = MOD.util;
 
 let dataCorrente = new Date();
@@ -2448,7 +2774,16 @@ async function disegna() {
     store.riepilogoGiorno(dataCorrente)
   ]);
 
-  document.getElementById('riassunto-giorno').innerHTML = `
+  // se il telefono non riceve dati da un pezzo, va detto: non deve accorgersene
+  // Veronica scoprendo che Claude le risponde con l'agenda della settimana scorsa
+  const ore = ponte.oreDaUltimaSincronizzazione();
+  const ponteInDifficolta = cfg.get('ponte').attivo && (cfg.get('ponte').inSospeso || (ore !== null && ore > 24));
+  const avvisoPonte = ponteInDifficolta
+    ? `<span class="pillola pillola--rossa" id="avviso-ponte" title="Tocca per aprire le impostazioni del ponte"
+             style="cursor:pointer">📱 telefono non aggiornato</span>`
+    : '';
+
+  document.getElementById('riassunto-giorno').innerHTML = avvisoPonte + `
     <div class="riassunto__voce">
       <div class="riassunto__valore">${riepilogo.totale}</div>
       <div class="riassunto__etichetta">${riepilogo.totale === 1 ? 'cliente' : 'clienti'}</div>
@@ -2545,6 +2880,15 @@ async function disegna() {
     corpo.scrollTop = Math.max(0, (m - inizioMin) * ppm - 160);
     contenitore.dataset.giaScorso = '1';
   }
+
+  const pillolaPonte = document.getElementById('avviso-ponte');
+  if (pillolaPonte) pillolaPonte.addEventListener('click', () => {
+    document.querySelector('[data-vista="impostazioni"]').click();
+    setTimeout(() => {
+      const voce = document.querySelector('[data-sezione="ponte"]');
+      if (voce) voce.click();
+    }, 120);
+  });
 
   clearTimeout(temporizzatoreAdesso);
   temporizzatoreAdesso = setTimeout(() => { if (isToday(dataCorrente)) disegna(); }, 60000);
@@ -3667,10 +4011,11 @@ const db = MOD.db;
 const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
+const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.0.1';
+const VERSIONE_APP = '1.1.1';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
@@ -3680,6 +4025,7 @@ const SEZIONI = [
   { id: 'cliente',   emoji: '👤', titolo: 'Scheda cliente' },
   { id: 'colore',    emoji: '🎨', titolo: 'Colore e formule' },
   { id: 'incassi',   emoji: '💶', titolo: 'Incassi' },
+  { id: 'ponte',     emoji: '📱', titolo: 'Telefono e Claude' },
   { id: 'backup',    emoji: '💾', titolo: 'Backup' },
   { id: 'sistema',   emoji: '🔧', titolo: 'Sistema' }
 ];
@@ -3707,7 +4053,7 @@ async function disegna() {
   const pannello = document.getElementById('pannello-impostazioni');
   const disegnatori = {
     negozio: dNegozio, listino: dListino, messaggi: dMessaggi, agenda: dAgenda,
-    cliente: dCliente, colore: dColore, incassi: dIncassi, backup: dBackup, sistema: dSistema
+    cliente: dCliente, colore: dColore, incassi: dIncassi, ponte: dPonte, backup: dBackup, sistema: dSistema
   };
   pannello.scrollTop = 0;
   await disegnatori[sezioneAttiva](pannello);
@@ -4343,6 +4689,137 @@ async function dIncassi(p) {
   });
 }
 
+/* ========================== TELEFONO E CLAUDE ========================== */
+
+async function dPonte(p) {
+  const b = cfg.get('ponte');
+  const configurato = ponte.configurato();
+  const linkPagina = ponte.indirizzoConsultazione();
+  const linkConnettore = ponte.indirizzoConnettore();
+
+  const quando = b.ultimaSincronizzazione
+    ? `${dataNumerica(new Date(b.ultimaSincronizzazione))} alle ${oraDi(new Date(b.ultimaSincronizzazione))}`
+    : null;
+
+  let stato, classeStato, testoStato;
+  if (!b.attivo) {
+    stato = '○'; classeStato = 'avviso-riquadro--attenzione';
+    testoStato = 'Il ponte è spento: dal telefono non si vede niente. Nessun dato esce dal tablet.';
+  } else if (!configurato) {
+    stato = '⚠'; classeStato = 'avviso-riquadro--attenzione';
+    testoStato = 'Mancano l\'indirizzo del server o la chiave di scrittura.';
+  } else if (b.ultimoErrore) {
+    stato = '⚠'; classeStato = '';
+    testoStato = `Ultimo invio non riuscito: ${b.ultimoErrore}.` +
+      (quando ? ` L'ultimo riuscito è del ${quando}: dal telefono si vedono ancora quei dati.` : '');
+  } else if (quando) {
+    stato = '✓'; classeStato = 'avviso-riquadro--info';
+    testoStato = `Ultimo invio riuscito il ${quando}` +
+      (b.ultimoConteggio ? ` — ${b.ultimoConteggio.clienti} clienti, ${b.ultimoConteggio.appuntamenti} appuntamenti.` : '.');
+  } else {
+    stato = '○'; classeStato = 'avviso-riquadro--attenzione';
+    testoStato = 'Configurato ma non ha ancora inviato niente. Usa "Invia adesso".';
+  }
+
+  p.innerHTML = `
+    <h2>Telefono e Claude</h2>
+    <p class="testo-tenue">Il tablet può mandare una copia dell'agenda a un piccolo server, così dal telefono
+    si può chiedere a Claude «a che ora ho posto giovedì?» anche stando a casa.
+    Va in una direzione sola: <strong>da qui verso il server</strong>. Da fuori non si può modificare niente.</p>
+
+    <div class="avviso-riquadro ${classeStato}" style="max-width:780px;margin-bottom:18px">
+      <span>${stato}</span><div><strong>Stato</strong>${esc(testoStato)}</div>
+    </div>
+
+    <div class="blocco">
+      ${leva('pn-attivo', 'Ponte attivo', b.attivo,
+             'Se spento, nessun dato esce dal tablet e il telefono smette di aggiornarsi')}
+      ${campo('pn-indirizzo', 'Indirizzo del server', b.indirizzo,
+        { segnaposto: 'https://charme-ponte.tuonome.workers.dev',
+          aiuto: 'Quello che ti dà Cloudflare quando crei il Worker. Senza barra finale.' })}
+      ${campo('pn-scrittura', 'Chiave di scrittura', b.chiaveScrittura,
+        { aiuto: 'Serve al tablet per <strong>inviare</strong>. Non va data a nessun altro.' })}
+      ${campo('pn-lettura', 'Chiave di lettura', b.chiaveLettura,
+        { aiuto: 'Serve solo a comporre qui sotto gli indirizzi per il telefono.' })}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <button class="btn btn--fantasma" id="pn-prova">Prova la connessione</button>
+        <button class="btn btn--principale" id="pn-invia">Invia adesso</button>
+      </div>
+    </div>
+
+    ${linkConnettore ? `
+    <div class="blocco">
+      <h3 class="blocco__titolo">Indirizzi da usare sul telefono</h3>
+      <p class="blocco__nota">Il primo va incollato in Claude, in Impostazioni → Connettori → Aggiungi connettore
+      personalizzato. Il secondo si apre in un browser qualsiasi e mostra l'agenda: tienilo come riserva.</p>
+
+      <div class="campo">
+        <span class="campo__etichetta">Connettore per Claude</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="input" id="pn-url-mcp" value="${esc(linkConnettore)}" readonly style="font-size:13px">
+          <button class="btn btn--fantasma btn--piccolo" data-copia="pn-url-mcp">Copia</button>
+        </div>
+      </div>
+
+      <div class="campo" style="margin-bottom:0">
+        <span class="campo__etichetta">Pagina di consultazione</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="input" id="pn-url-pagina" value="${esc(linkPagina)}" readonly style="font-size:13px">
+          <button class="btn btn--fantasma btn--piccolo" data-copia="pn-url-pagina">Copia</button>
+          <a class="btn btn--fantasma btn--piccolo" href="${esc(linkPagina)}" target="_blank" rel="noopener">Apri</a>
+        </div>
+        <p class="campo__aiuto">Chi ha questo indirizzo vede l'agenda. Trattalo come una chiave di casa:
+        non mandarlo su gruppi, non pubblicarlo. Se ti sfugge, cambia le chiavi nel codice del server e qui.</p>
+      </div>
+    </div>` : ''}
+
+    <div class="blocco">
+      <h3 class="blocco__titolo">Cosa esce dal tablet</h3>
+      <p class="blocco__nota">Solo quello che serve per rispondere alle domande. Niente foto.</p>
+      <div class="riga-info"><span class="riga-info__etichetta">Appuntamenti</span>
+        <span class="riga-info__valore">ultimi 18 mesi e prossimi 13</span></div>
+      <div class="riga-info"><span class="riga-info__etichetta">Per ogni appuntamento</span>
+        <span class="riga-info__valore">giorno, ora, cliente, servizi, durata, importo</span></div>
+      <div class="riga-info"><span class="riga-info__etichetta">Clienti</span>
+        <span class="riga-info__valore">nome, telefono, note, allergie, riepiloghi</span></div>
+      <div class="riga-info"><span class="riga-info__etichetta">Foto</span>
+        <span class="riga-info__valore">no, restano solo sul tablet</span></div>
+      <p class="campo__aiuto" style="margin-top:12px">Sono dati personali di terzi: stanno su un server tuo,
+      raggiungibile solo da chi conosce le chiavi. Spegnendo il ponte smetti di inviarli, ma quelli già inviati
+      restano sul server finché non lo svuoti o non lo cancelli.</p>
+    </div>`;
+
+  collega(p, 'ponte', {
+    'pn-attivo': 'attivo', 'pn-indirizzo': 'indirizzo',
+    'pn-scrittura': 'chiaveScrittura', 'pn-lettura': 'chiaveLettura'
+  });
+  p.querySelectorAll('#pn-indirizzo,#pn-scrittura,#pn-lettura,#pn-attivo')
+   .forEach(el => el.addEventListener('change', () => setTimeout(() => disegna(), 350)));
+
+  ui.su(p, 'click', '[data-copia]', (e, el) => {
+    const campo = p.querySelector('#' + el.dataset.copia);
+    campo.select();
+    navigator.clipboard.writeText(campo.value)
+      .then(() => ui.ok('Indirizzo copiato'))
+      .catch(() => ui.avviso('Selezionato: copialo a mano'));
+  });
+
+  p.querySelector('#pn-prova').addEventListener('click', async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Provo…';
+    const r = await ponte.prova();
+    r.ok ? ui.ok(r.messaggio) : ui.errore(r.messaggio);
+    if (r.ok) await ponte.sincronizza({ manuale: true });
+    disegna();
+  });
+
+  p.querySelector('#pn-invia').addEventListener('click', async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Invio…';
+    const r = await ponte.sincronizza({ manuale: true });
+    r.ok ? ui.ok('Agenda inviata al telefono') : ui.errore(r.messaggio);
+    disegna();
+  });
+}
+
 /* ========================== BACKUP ========================== */
 
 async function dBackup(p) {
@@ -4548,6 +5025,7 @@ MOD.app = (function () {
 const db = MOD.db;
 const cfg = MOD.cfgApp;
 const ui = MOD.ui;
+const ponte = MOD.ponte;
 const agenda = MOD.vAgenda;
 const clienti = MOD.vClienti;
 const nuovo = MOD.vNuovo;
@@ -4587,6 +5065,8 @@ async function avvia() {
     if (parametri.get('vista') && VISTE.includes(parametri.get('vista'))) vaiA(parametri.get('vista'));
     if (parametri.get('azione') === 'nuovo') setTimeout(() => nuovo.apri({ data: new Date() }), 400);
 
+    ponte.avvia();
+
     mostraApp();
     registraServiceWorker();
     avviaControlloPromemoria();
@@ -4594,14 +5074,85 @@ async function avvia() {
 
   } catch (errore) {
     console.error('[Charme] avvio non riuscito', errore);
-    document.getElementById('avvio').innerHTML = `
-      <div class="avvio__marchio">Charme</div>
-      <div style="max-width:420px;text-align:center;padding:0 24px">
-        <p style="color:var(--rosso);font-weight:600;margin-bottom:8px">L'app non è riuscita ad aprirsi</p>
-        <p class="avvio__testo" style="line-height:1.55">${errore.message}</p>
-        <button class="btn btn--principale" style="margin-top:18px" onclick="location.reload()">Riprova</button>
-      </div>`;
+    schermataDiGuasto(errore);
   }
+}
+
+/**
+ * Se l'app non riesce ad aprirsi, i dati non devono restare in ostaggio.
+ * Da qui si può sempre scaricare una copia leggendo il database direttamente,
+ * senza passare da niente che possa essersi rotto.
+ */
+function schermataDiGuasto(errore) {
+  const avvio = document.getElementById('avvio');
+  if (!avvio) return;
+  avvio.innerHTML = `
+    <div class="avvio__marchio">Charme</div>
+    <div style="max-width:440px;text-align:center;padding:0 24px">
+      <p style="color:var(--rosso);font-weight:600;margin-bottom:8px">L'app non è riuscita ad aprirsi</p>
+      <p class="avvio__testo" style="line-height:1.55">${(errore && errore.message) || 'errore sconosciuto'}</p>
+      <p class="avvio__testo" style="line-height:1.55;margin-top:14px">
+        I dati delle clienti non sono stati toccati. Prima di qualsiasi altra cosa,
+        salvane una copia con il pulsante qui sotto.
+      </p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+        <button class="btn btn--principale" id="guasto-salva">Salva una copia dei dati</button>
+        <button class="btn btn--fantasma" id="guasto-riprova">Riprova</button>
+      </div>
+      <p class="avvio__testo" style="margin-top:16px;font-size:12px">
+        Se il problema resta, manda una foto di questo schermo.
+      </p>
+    </div>`;
+
+  avvio.querySelector('#guasto-riprova').addEventListener('click', () => location.reload());
+  avvio.querySelector('#guasto-salva').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    e.target.textContent = 'Salvo…';
+    try {
+      const pacchetto = await esportazioneDiEmergenza();
+      const nome = `charme-emergenza-${new Date().toISOString().slice(0, 10)}.json`;
+      const url = URL.createObjectURL(new Blob([JSON.stringify(pacchetto)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = nome;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      e.target.textContent = 'Copia salvata ✓';
+    } catch (err) {
+      e.target.disabled = false;
+      e.target.textContent = 'Riprova a salvare';
+      console.error('[Charme] esportazione di emergenza fallita', err);
+    }
+  });
+}
+
+/** Legge il database senza usare nessun altro pezzo dell'app. */
+function esportazioneDiEmergenza() {
+  return new Promise((risolvi, rifiuta) => {
+    const richiesta = indexedDB.open('charme');
+    richiesta.onerror = () => rifiuta(richiesta.error);
+    richiesta.onsuccess = async () => {
+      const database = richiesta.result;
+      const pacchetto = {
+        formato: 'charme-backup',
+        versioneDati: database.version,
+        creatoIl: new Date().toISOString(),
+        emergenza: true,
+        dati: {}
+      };
+      for (const nome of database.objectStoreNames) {
+        if (nome === 'foto') continue;   // pesanti: hanno un backup a parte
+        pacchetto.dati[nome] = await new Promise((ok) => {
+          try {
+            const r = database.transaction(nome, 'readonly').objectStore(nome).getAll();
+            r.onsuccess = () => ok(r.result);
+            r.onerror = () => ok([]);
+          } catch { ok([]); }
+        });
+      }
+      database.close();
+      risolvi(pacchetto);
+    };
+  });
 }
 
 function mostraApp() {
@@ -4725,6 +5276,8 @@ else avvia();
 
 return { vaiA };
 })();
+
+window.CHARME = MOD;
 
 </script>
 </body>
