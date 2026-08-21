@@ -317,10 +317,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .app-blocco--concluso { background: var(--salvia-tenue); border-left-color: var(--salvia); }
 .app-blocco--annullato { opacity: .5; text-decoration: line-through; }
 .app-blocco--assente { background: var(--rosso-tenue); border-left-color: var(--rosso); }
+/* Una banda per ogni attesa, posizionata dove cade davvero nell'appuntamento:
+   applicazione, ATTESA, taglio, piega. Non è mai tutta in fondo. */
 .app-blocco__posa {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  background: repeating-linear-gradient(135deg, rgba(176,141,87,.13) 0 7px, transparent 7px 14px);
-  pointer-events: none; border-top: 1px dashed rgba(176,141,87,.5);
+  position: absolute; left: 0; right: 0;
+  background: repeating-linear-gradient(135deg, rgba(176,141,87,.11) 0 8px, transparent 8px 16px);
+  pointer-events: none;
+  border-top: 1px dashed rgba(176,141,87,.55);
+  border-bottom: 1px dashed rgba(176,141,87,.55);
 }
 
 .segno-invio {
@@ -765,6 +769,22 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .riassunto__etichetta { font-size: 10px; }
 }
 
+/* --- righe dello storico toccabili: nota e ripeti --- */
+.linea-storico--tocca {
+  cursor: pointer; border-radius: var(--raggio-s);
+  margin: 0 -10px; padding-left: 10px; padding-right: 10px;
+  transition: background .15s;
+}
+.linea-storico--tocca:hover { background: var(--crema); }
+.linea-storico--tocca:active { background: var(--crema-scura); }
+.linea-storico--tocca::after {
+  content: '›'; align-self: center; color: var(--bruno-tenue);
+  font-size: 20px; margin-left: 4px; flex-shrink: 0;
+}
+
+/* --- appuntamento senza scheda cliente --- */
+.app-blocco--senza-scheda { border-left-style: dashed; }
+
 </style>
 </head>
 <body>
@@ -825,6 +845,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
         </button>
         <div class="barra-giorno__data" id="etichetta-giorno"></div>
         <button class="btn btn--fantasma btn--piccolo" id="vai-oggi" type="button">Oggi</button>
+        <button class="btn-icona" id="cerca-scheda" type="button" aria-label="Cerca una scheda cliente" title="Cerca una scheda cliente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
         <div class="barra-giorno__spazio"></div>
         <div class="riassunto" id="riassunto-giorno"></div>
       </div>
@@ -1189,6 +1212,19 @@ const MIGRAZIONI = [
       foto.createIndex('data', 'data');
     }
   }
+  ,{
+    versione: 2,
+    descrizione: 'Appuntamenti fissi, servizi abituali, prezzi personalizzati, clienti senza scheda',
+    applica(db, vecchia, transazione) {
+      // Solo un indice nuovo: i campi aggiunti su clienti e appuntamenti non
+      // richiedono modifiche di struttura, IndexedDB non impone uno schema.
+      // Serve a ritrovare in fretta tutte le occorrenze di una serie fissa.
+      const appuntamenti = transazione.objectStore('appuntamenti');
+      if (!appuntamenti.indexNames.contains('serieId')) {
+        appuntamenti.createIndex('serieId', 'serieId');
+      }
+    }
+  }
 ];
 
 const VERSIONE_DATI = MIGRAZIONI[MIGRAZIONI.length - 1].versione;
@@ -1339,6 +1375,9 @@ function db() {
 /* ---------- operazioni di base ---------- */
 
 function leggi(store, chiave) {
+  // Una chiave assente non è un errore: è semplicemente "non c'è".
+  // Succede con gli appuntamenti fissati senza scheda cliente.
+  if (chiave === undefined || chiave === null || chiave === '') return Promise.resolve(undefined);
   return new Promise((ok, ko) => {
     const r = db().transaction(store, 'readonly').objectStore(store).get(chiave);
     r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
@@ -2044,7 +2083,7 @@ MOD.store = (function () {
 
 const db = MOD.db;
 const cfg = MOD.cfgApp;
-const { uid, normalizza, nomeCompleto, dayKey, isoLocale, daIsoLocale, minutiDaHHMM, hhmmDaMinuti, addDays, startOfDay } = MOD.util;
+const { uid, normalizza, nomeCompleto, dayKey, fromDayKey, isoLocale, daIsoLocale, minutiDaHHMM, hhmmDaMinuti, addDays, startOfDay } = MOD.util;
 
 /* =========================================================================
    CLIENTI
@@ -2086,7 +2125,14 @@ async function cercaClienti(testo, limite = 40) {
 
 async function salvaCliente(dati) {
   const adesso = new Date().toISOString();
+  // Le impostazioni dietro l'ingranaggio non passano da questo modulo: vanno
+  // conservate, altrimenti una modifica al nome cancellerebbe la ricorrenza.
+  const precedente = dati.id ? await db.leggi('clienti', dati.id) : null;
   const cliente = {
+    ...(precedente || {}),
+    ricorrenza: (precedente && precedente.ricorrenza) || ricorrenzaVuota(),
+    serviziAbituali: (precedente && precedente.serviziAbituali) || [],
+    prezzi: (precedente && precedente.prezzi) || {},
     id: dati.id || uid('cli'),
     nome: (dati.nome || '').trim(),
     cognome: (dati.cognome || '').trim(),
@@ -2258,34 +2304,40 @@ async function leggiAppuntamento(id) {
 async function salvaAppuntamento(dati) {
   const adesso = new Date().toISOString();
   const inizio = typeof dati.inizio === 'string' ? dati.inizio : isoLocale(dati.inizio);
-  const servizi = (dati.servizi || []).map(s => ({
+
+  // I servizi vengono copiati dentro l'appuntamento con nome, durata e prezzo
+  // del momento: se domani il listino cambia, lo storico resta fedele.
+  // L'ordine è quello di svolgimento: prima chi ha una posa.
+  const servizi = ordinaServizi((dati.servizi || []).map(s => ({
     servizioId: s.servizioId || s.id || null,
     nome: s.nome,
     durata: Number(s.durata) || 0,
     prezzo: Number(s.prezzo) || 0,
     posaMinuti: Number(s.posaMinuti) || 0
-  }));
+  })));
 
   const durata = dati.durata != null
     ? Number(dati.durata)
-    : (servizi.reduce((s, x) => s + x.durata, 0) || cfg.get('agenda').durataPredefinita);
+    : (durataDaServizi(servizi) || cfg.get('agenda').durataPredefinita);
 
   const app = {
     id: dati.id || uid('app'),
-    clienteId: dati.clienteId,
+    clienteId: dati.clienteId || null,
+    // Chi non ha ancora una scheda vive con il solo nome, fin quando non gliela si crea.
+    clienteNome: dati.clienteId ? null : (dati.clienteNome || '').trim() || null,
     giorno: inizio.slice(0, 10),
     inizio,
     durata,
-    posaMinuti: dati.posaMinuti != null
-      ? Number(dati.posaMinuti)
-      : servizi.reduce((s, x) => s + x.posaMinuti, 0),
+    posaMinuti: servizi.reduce((t, s) => t + (s.posaMinuti || 0), 0),
     servizi,
     prezzo: dati.prezzo != null && dati.prezzo !== ''
       ? Number(dati.prezzo)
-      : servizi.reduce((s, x) => s + x.prezzo, 0),
+      : servizi.reduce((t, s) => t + s.prezzo, 0),
     stato: dati.stato || 'previsto',      // previsto | concluso | annullato | assente
     note: dati.note || '',
     metodoPagamento: dati.metodoPagamento || null,
+    serieId: dati.serieId || null,        // se nasce da un appuntamento fisso
+    dataSerie: dati.dataSerie || null,    // la data prevista dalla serie, anche se poi spostato
     confermaInviata: dati.confermaInviata || null,
     promemoriaInviato: dati.promemoriaInviato || null,
     creatoIl: dati.creatoIl || adesso,
@@ -2293,8 +2345,52 @@ async function salvaAppuntamento(dati) {
   };
 
   await db.salva('appuntamenti', app);
-  document.dispatchEvent(new CustomEvent('dati:cambiati', { detail: { tipo: 'appuntamento', id: app.id } }));
+  if (!dati.silenzioso) {
+    document.dispatchEvent(new CustomEvent('dati:cambiati', { detail: { tipo: 'appuntamento', id: app.id } }));
+  }
   return app;
+}
+
+/** Il nome da mostrare, che la cliente abbia una scheda oppure no. */
+function nomeDiAppuntamento(appuntamento, cliente) {
+  if (cliente) return nomeCompleto(cliente);
+  if (appuntamento && appuntamento.clienteNome) return appuntamento.clienteNome;
+  return 'cliente eliminata';
+}
+
+function senzaScheda(appuntamento) {
+  return !appuntamento.clienteId && !!appuntamento.clienteNome;
+}
+
+/**
+ * Crea la scheda per chi era stato fissato con il solo nome, e le aggancia
+ * tutti gli appuntamenti registrati con quello stesso nome.
+ */
+async function creaSchedaDaAppuntamento(appuntamentoId, dati = {}) {
+  const app = await db.leggi('appuntamenti', appuntamentoId);
+  if (!app || app.clienteId) return null;
+
+  const nomeGrezzo = (dati.nome || app.clienteNome || '').trim();
+  const parti = nomeGrezzo.split(/\s+/);
+  const cliente = await salvaCliente({
+    nome: dati.nome !== undefined ? dati.nome : (parti[0] || nomeGrezzo),
+    cognome: dati.cognome !== undefined ? dati.cognome : parti.slice(1).join(' '),
+    telefono: dati.telefono || '',
+    note: dati.note || '',
+    allergie: dati.allergie || ''
+  });
+
+  const tutti = await db.leggiTutti('appuntamenti');
+  const bersaglio = normalizza(app.clienteNome);
+  let agganciati = 0;
+  for (const a of tutti) {
+    if (a.clienteId || !a.clienteNome) continue;
+    if (normalizza(a.clienteNome) !== bersaglio) continue;
+    await db.salva('appuntamenti', { ...a, clienteId: cliente.id, clienteNome: null, modificatoIl: new Date().toISOString() });
+    agganciati++;
+  }
+  document.dispatchEvent(new CustomEvent('dati:cambiati'));
+  return { cliente, agganciati };
 }
 
 async function eliminaAppuntamento(id) {
@@ -2315,46 +2411,139 @@ async function segnaMessaggioInviato(id, tipo) {
   return salvaAppuntamento({ ...a, [campo]: new Date().toISOString() });
 }
 
-/* ---------- occupazione e orari liberi ---------- */
+/* ---------- tratti: come si svolge davvero un appuntamento ----------
 
-/* La parte "attiva" di un appuntamento è quella in cui lei ha le mani occupate.
-   Il tempo di posa sta in fondo al servizio ed è tempo in cui può prendere
-   un'altra cliente: per questo non conta come occupato. */
-function finestraAttiva(app) {
-  const da = minutiDaHHMM(app.inizio.slice(11));
-  const attivo = Math.max(5, (app.durata || 0) - (app.posaMinuti || 0));
-  return { da, a: da + attivo, totaleA: da + (app.durata || 0) };
+   Un appuntamento non è un blocco unico. È una sequenza:
+   ogni servizio dà il suo tratto di LAVORO e, se ha una posa, l'ATTESA che
+   segue subito dopo. L'attesa è tempo in cui le mani sono libere.
+
+     Colore radici 45' (30' di posa) + Taglio 30' + Piega 30', dalle 15:00
+
+       15:00–15:15  lavoro   applicazione colore
+       15:15–15:45  ATTESA   posa            ← qui entra un'altra cliente
+       15:45–16:15  lavoro   taglio
+       16:15–16:45  lavoro   piega
+
+   Tutto il resto — occupazione, orari liberi, conflitti, disegno in agenda —
+   discende da qui.
+   ------------------------------------------------------------------------ */
+
+const LAVORO_MINIMO = 5;
+
+/** I servizi con posa vanno svolti per primi: l'attesa dell'uno copre il
+    lavoro dell'altro. Fra pari, si rispetta l'ordine in cui sono stati scelti. */
+function ordinaServizi(servizi) {
+  const conPosa = [], senzaPosa = [];
+  for (const s of servizi || []) ((s.posaMinuti || 0) > 0 ? conPosa : senzaPosa).push(s);
+  return [...conPosa, ...senzaPosa];
+}
+
+/**
+ * I tratti di un appuntamento, in minuti dal suo inizio.
+ * @returns [{ tipo:'lavoro'|'attesa', da, a, servizio }]
+ */
+function tratti(appuntamento) {
+  const servizi = (appuntamento.servizi && appuntamento.servizi.length)
+    ? appuntamento.servizi
+    : [{ nome: 'Appuntamento', durata: appuntamento.durata || 30, posaMinuti: 0 }];
+
+  const out = [];
+  let t = 0;
+  for (const s of servizi) {
+    const durata = Number(s.durata) || 0;
+    if (durata <= 0) continue;
+    const posa = Math.min(Number(s.posaMinuti) || 0, Math.max(0, durata - LAVORO_MINIMO));
+    const lavoro = durata - posa;
+    if (lavoro > 0) { out.push({ tipo: 'lavoro', da: t, a: t + lavoro, servizio: s.nome }); t += lavoro; }
+    if (posa > 0)   { out.push({ tipo: 'attesa', da: t, a: t + posa,   servizio: s.nome }); t += posa; }
+  }
+  if (!out.length) {
+    return [{ tipo: 'lavoro', da: 0, a: Math.max(LAVORO_MINIMO, appuntamento.durata || 30), servizio: '' }];
+  }
+
+  // Se la durata complessiva è stata corretta a mano, la differenza va sul
+  // lavoro: il tempo di posa è un dato tecnico del prodotto, non si stira.
+  const durataTratti = out[out.length - 1].a;
+  const durataVoluta = Number(appuntamento.durata) || durataTratti;
+  const differenza = durataVoluta - durataTratti;
+
+  if (differenza > 0) {
+    const ultimoLavoro = [...out].reverse().find(x => x.tipo === 'lavoro');
+    if (ultimoLavoro && out[out.length - 1] === ultimoLavoro) ultimoLavoro.a += differenza;
+    else out.push({ tipo: 'lavoro', da: durataTratti, a: durataVoluta, servizio: '' });
+  } else if (differenza < 0) {
+    let residuo = -differenza;
+    for (let i = out.length - 1; i >= 0 && residuo > 0; i--) {
+      if (out[i].tipo !== 'lavoro') continue;
+      const riducibile = Math.min(residuo, (out[i].a - out[i].da) - LAVORO_MINIMO);
+      if (riducibile <= 0) continue;
+      out[i].a -= riducibile;
+      for (let j = i + 1; j < out.length; j++) { out[j].da -= riducibile; out[j].a -= riducibile; }
+      residuo -= riducibile;
+    }
+  }
+  return out;
+}
+
+/** La durata complessiva che discende dai servizi scelti. */
+function durataDaServizi(servizi) {
+  return (servizi || []).reduce((t, s) => t + (Number(s.durata) || 0), 0);
+}
+
+/** I tratti in minuti dalla mezzanotte, pronti da confrontare fra appuntamenti. */
+function trattiAssoluti(appuntamento) {
+  const base = minutiDaHHMM(appuntamento.inizio.slice(11));
+  return tratti(appuntamento).map(t => ({ ...t, da: base + t.da, a: base + t.a }));
+}
+
+function finestreLavoro(appuntamento) {
+  return trattiAssoluti(appuntamento).filter(t => t.tipo === 'lavoro');
+}
+
+function finestreAttesa(appuntamento) {
+  return trattiAssoluti(appuntamento).filter(t => t.tipo === 'attesa');
 }
 
 function siSovrappongono(a1, a2, b1, b2) { return a1 < b2 && b1 < a2; }
 
+function inConflitto(finestreA, finestreB) {
+  for (const x of finestreA) for (const y of finestreB) {
+    if (siSovrappongono(x.da, x.a, y.da, y.a)) return true;
+  }
+  return false;
+}
+
+/** Un appuntamento finto, per calcolare i tratti di una scelta non ancora salvata. */
+function appuntamentoIpotetico(inizioIso, durata, servizi) {
+  return { inizio: inizioIso, durata, servizi: servizi || [] };
+}
+
 /**
- * Conflitti con altri appuntamenti nella stessa giornata.
- * Restituisce { attivi, durantePosa }: i primi sono veri conflitti, i secondi
- * sono orari che cadono nella posa di un'altra cliente (spesso desiderabili).
+ * Conflitti con gli altri appuntamenti della stessa giornata.
+ * - attivi: due tratti di LAVORO che si accavallano. Conflitto vero.
+ * - durantePosa: il lavoro nuovo cade nell'ATTESA di un'altra. È desiderabile.
  */
-async function verificaConflitti(inizioIso, durata, { escludiId = null } = {}) {
+async function verificaConflitti(inizioIso, durata, { escludiId = null, servizi = null } = {}) {
   const giorno = inizioIso.slice(0, 10);
   const esistenti = (await appuntamentiDelGiorno(giorno))
     .filter(a => a.id !== escludiId && a.stato !== 'annullato');
 
-  const da = minutiDaHHMM(inizioIso.slice(11));
-  const a = da + Number(durata || 0);
+  const nuovo = appuntamentoIpotetico(inizioIso, durata, servizi);
+  const lavoroNuovo = finestreLavoro(nuovo);
 
   const attivi = [], durantePosa = [];
   for (const altro of esistenti) {
-    const f = finestraAttiva(altro);
-    if (siSovrappongono(da, a, f.da, f.a)) attivi.push(altro);
-    else if (siSovrappongono(da, a, f.a, f.totaleA)) durantePosa.push(altro);
+    if (inConflitto(lavoroNuovo, finestreLavoro(altro))) attivi.push(altro);
+    else if (inConflitto(lavoroNuovo, finestreAttesa(altro))) durantePosa.push(altro);
   }
   return { attivi, durantePosa, nessuno: attivi.length === 0 };
 }
 
 /**
- * Orari liberi della giornata per una durata data.
- * Ogni voce: { ora, libero, durantePosa, cliente }
+ * Orari in cui l'appuntamento ci sta.
+ * Ogni voce: { ora, minuti, libero, durantePosa, appuntamentoInPosa, conflittoCon }
  */
-async function orariLiberi(data, durata, { escludiId = null, includiOccupati = false } = {}) {
+async function orariLiberi(data, durata, { escludiId = null, servizi = null, includiOccupati = false } = {}) {
   const agenda = cfg.get('agenda');
   const passo = agenda.passoMinuti || 15;
   const inizioGiornata = minutiDaHHMM(agenda.oraInizio);
@@ -2362,25 +2551,31 @@ async function orariLiberi(data, durata, { escludiId = null, includiOccupati = f
 
   const esistenti = (await appuntamentiDelGiorno(data))
     .filter(a => a.id !== escludiId && a.stato !== 'annullato');
-  const finestre = esistenti.map(a => ({ app: a, ...finestraAttiva(a) }));
+  const altrui = esistenti.map(a => ({
+    app: a, lavoro: finestreLavoro(a), attesa: finestreAttesa(a)
+  }));
 
   const oggi = dayKey(new Date()) === dayKey(data);
   const adesso = new Date();
   const minutiOra = adesso.getHours() * 60 + adesso.getMinutes();
+  const giorno = dayKey(data);
 
   const risultato = [];
   for (let t = inizioGiornata; t + Number(durata) <= fineGiornata; t += passo) {
-    if (oggi && t < minutiOra - passo) continue;   // niente orari già passati
+    if (oggi && t < minutiOra - passo) continue;
 
-    const fine = t + Number(durata);
-    const conflitto = finestre.find(f => siSovrappongono(t, fine, f.da, f.a));
-    const inPosa = finestre.find(f => siSovrappongono(t, fine, f.a, f.totaleA));
+    const lavoroNuovo = finestreLavoro(
+      appuntamentoIpotetico(`${giorno}T${hhmmDaMinuti(t)}`, durata, servizi)
+    );
+
+    const conflitto = altrui.find(x => inConflitto(lavoroNuovo, x.lavoro));
+    const inPosa = !conflitto && altrui.find(x => inConflitto(lavoroNuovo, x.attesa));
 
     const voce = {
       ora: hhmmDaMinuti(t),
       minuti: t,
       libero: !conflitto,
-      durantePosa: !conflitto && !!inPosa,
+      durantePosa: !!inPosa,
       appuntamentoInPosa: inPosa ? inPosa.app : null,
       conflittoCon: conflitto ? conflitto.app : null
     };
@@ -2389,9 +2584,8 @@ async function orariLiberi(data, durata, { escludiId = null, includiOccupati = f
   return risultato;
 }
 
-/** Il primo orario libero utile: quello che l'app propone già selezionato. */
-async function primoOrarioUtile(data, durata) {
-  const liberi = await orariLiberi(data, durata);
+async function primoOrarioUtile(data, durata, servizi = null) {
+  const liberi = await orariLiberi(data, durata, { servizi });
   return liberi.find(s => s.libero && !s.durantePosa) || liberi[0] || null;
 }
 
@@ -2405,6 +2599,7 @@ async function promemoriaDaInviare(data = addDays(new Date(), 1)) {
   for (const a of appuntamenti) {
     if (a.stato === 'annullato' || a.promemoriaInviato) continue;
     if (a.inizio <= adesso) continue;   // avvisare per un appuntamento già passato non serve
+    if (!a.clienteId) continue;        // fissata con il solo nome: non c'è un numero a cui scrivere
     const cliente = await leggiCliente(a.clienteId);
     if (!cliente || !cliente.promemoriaAttivo) continue;
     if (!cliente.telefono) continue;
@@ -2433,12 +2628,228 @@ async function giornataCompleta(data) {
   const appuntamenti = await appuntamentiDelGiorno(data);
   const clienti = {};
   for (const a of appuntamenti) {
+    if (!a.clienteId) continue;                       // fissata con il solo nome
     if (!clienti[a.clienteId]) clienti[a.clienteId] = await leggiCliente(a.clienteId);
   }
-  return appuntamenti.map(a => ({ ...a, cliente: clienti[a.clienteId] || null }));
+  return appuntamenti.map(a => ({
+    ...a,
+    cliente: a.clienteId ? (clienti[a.clienteId] || null) : null,
+    nomeVisualizzato: nomeDiAppuntamento(a, a.clienteId ? clienti[a.clienteId] : null)
+  }));
 }
 
-return { applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, giornataCompleta, leggiAppuntamento, leggiCliente, listinoPerCategoria, orariLiberi, primoOrarioUtile, promemoriaDaInviare, riepilogoGiorno, riordinaServizi, salvaAppuntamento, salvaCategoria, salvaCliente, salvaServizio, segnaMessaggioInviato, storicoCliente, verificaConflitti };
+/* =========================================================================
+   PREZZI E SERVIZI DI UNA SINGOLA CLIENTE
+   Il colore di Rita non costa come il colore di listino. I prezzi suoi
+   valgono sempre, anche scegliendo il servizio dal listino normale, e un
+   aumento generale non li tocca.
+   ========================================================================= */
+
+/** Durata, prezzo e posa validi per questa cliente e questo servizio. */
+function tariffaPerCliente(cliente, servizio) {
+  const suo = cliente && cliente.prezzi ? cliente.prezzi[servizio.id] : null;
+  if (!suo) {
+    return {
+      durata: servizio.durata, prezzo: servizio.prezzo,
+      posaMinuti: servizio.posaMinuti || 0, personalizzato: false
+    };
+  }
+  return {
+    durata: suo.durata != null ? Number(suo.durata) : servizio.durata,
+    prezzo: suo.prezzo != null ? Number(suo.prezzo) : servizio.prezzo,
+    posaMinuti: suo.posaMinuti != null ? Number(suo.posaMinuti) : (servizio.posaMinuti || 0),
+    personalizzato: true
+  };
+}
+
+/** Il servizio con la tariffa della cliente già applicata. */
+function servizioPerCliente(cliente, servizio) {
+  const t = tariffaPerCliente(cliente, servizio);
+  return { ...servizio, ...t };
+}
+
+async function serviziAbitualiDi(cliente) {
+  if (!cliente || !cliente.serviziAbituali || !cliente.serviziAbituali.length) return [];
+  const tutti = await elencoServizi();
+  return cliente.serviziAbituali
+    .map(id => tutti.find(s => s.id === id))
+    .filter(Boolean)
+    .map(s => servizioPerCliente(cliente, s));
+}
+
+/** Salva le impostazioni che stanno dietro l'ingranaggio della scheda. */
+async function salvaImpostazioniCliente(clienteId, modifiche) {
+  const c = await leggiCliente(clienteId);
+  if (!c) return null;
+  const aggiornato = { ...c, ...modifiche, modificatoIl: new Date().toISOString() };
+  await db.salva('clienti', aggiornato);
+  document.dispatchEvent(new CustomEvent('dati:cambiati', { detail: { tipo: 'cliente', id: clienteId } }));
+  return aggiornato;
+}
+
+/* =========================================================================
+   APPUNTAMENTI FISSI
+   "Giulia, ogni giovedì alle 15:00". L'app tiene coperti tre mesi in avanti
+   e sposta l'orizzonte a ogni apertura: non finiscono mai.
+   ========================================================================= */
+
+const ORIZZONTE_GIORNI = 90;
+
+function ricorrenzaVuota() {
+  return {
+    attiva: false,
+    serieId: null,
+    cadenzaGiorni: 7,
+    ora: '09:00',
+    serviziIds: [],
+    dataInizio: null,
+    saltate: [],          // occorrenze cancellate una per una: non si ricreano
+    generatoFinoA: null
+  };
+}
+
+/** La prima data utile con quel giorno della settimana, da oggi in avanti. */
+function primaDataPerGiorno(giornoSettimana, da = new Date()) {
+  const base = startOfDay(da);
+  const avanti = (Number(giornoSettimana) - base.getDay() + 7) % 7;
+  return dayKey(addDays(base, avanti));
+}
+
+/**
+ * Genera le occorrenze mancanti fino all'orizzonte.
+ * Non ricrea quelle cancellate a mano, e non duplica quelle già spostate:
+ * ogni appuntamento ricorda la data che la serie gli aveva assegnato.
+ * @returns { create, conflitti }
+ */
+async function generaOccorrenze(cliente, { orizzonteGiorni = ORIZZONTE_GIORNI } = {}) {
+  const r = cliente && cliente.ricorrenza;
+  if (!r || !r.attiva || !r.dataInizio || !r.cadenzaGiorni) return { create: 0, conflitti: [] };
+
+  const serieId = r.serieId || uid('ser');
+  const oggi = dayKey(new Date());
+  const limite = dayKey(addDays(new Date(), orizzonteGiorni));
+
+  const esistenti = await db.leggiPerIndice('appuntamenti', 'serieId', serieId);
+  const giaFatte = new Set(esistenti.map(a => a.dataSerie).filter(Boolean));
+  const saltate = new Set(r.saltate || []);
+
+  const tuttiServizi = await elencoServizi();
+  const servizi = (r.serviziIds || [])
+    .map(id => tuttiServizi.find(s => s.id === id))
+    .filter(Boolean)
+    .map(s => {
+      const t = tariffaPerCliente(cliente, s);
+      return { servizioId: s.id, nome: s.nome, durata: t.durata, prezzo: t.prezzo, posaMinuti: t.posaMinuti };
+    });
+
+  let create = 0;
+  const conflitti = [];
+  let giorno = r.dataInizio;
+  let giri = 0;
+
+  while (giorno <= limite && giri++ < 500) {
+    if (giorno >= oggi && !giaFatte.has(giorno) && !saltate.has(giorno)) {
+      const inizio = `${giorno}T${r.ora}`;
+      const durata = durataDaServizi(servizi) || cfg.get('agenda').durataPredefinita;
+
+      // Le clienti fisse sono un punto fermo della settimana: l'appuntamento
+      // si crea comunque, e la sovrapposizione viene segnalata.
+      const c = await verificaConflitti(inizio, durata, { servizi });
+      if (c.attivi.length) conflitti.push({ giorno, con: c.attivi });
+
+      await salvaAppuntamento({
+        clienteId: cliente.id,
+        inizio, durata, servizi,
+        serieId, dataSerie: giorno,
+        silenzioso: true
+      });
+      create++;
+    }
+    giorno = dayKey(addDays(fromDayKey(giorno), Number(r.cadenzaGiorni)));
+  }
+
+  await salvaImpostazioniCliente(cliente.id, {
+    ricorrenza: { ...r, serieId, generatoFinoA: limite }
+  });
+
+  if (create) document.dispatchEvent(new CustomEvent('dati:cambiati'));
+  return { create, conflitti, serieId };
+}
+
+/** All'avvio dell'app: sposta in avanti l'orizzonte di tutte le serie attive. */
+async function rigeneraTutteLeSerie() {
+  const clienti = await elencoClienti();
+  let totale = 0;
+  const conflitti = [];
+  for (const c of clienti) {
+    if (!c.ricorrenza || !c.ricorrenza.attiva) continue;
+    const esito = await generaOccorrenze(c);
+    totale += esito.create;
+    if (esito.conflitti.length) conflitti.push({ cliente: c, conflitti: esito.conflitti });
+  }
+  return { create: totale, conflitti };
+}
+
+async function occorrenzeSerie(serieId, { daGiorno = dayKey(new Date()) } = {}) {
+  const tutte = await db.leggiPerIndice('appuntamenti', 'serieId', serieId);
+  return tutte.filter(a => a.giorno >= daGiorno).sort((x, y) => x.inizio.localeCompare(y.inizio));
+}
+
+/** Cancella una sola occorrenza e la annota, così non viene ricreata. */
+async function saltaOccorrenza(appuntamento) {
+  if (appuntamento.serieId && appuntamento.clienteId) {
+    const c = await leggiCliente(appuntamento.clienteId);
+    if (c && c.ricorrenza) {
+      const saltate = new Set(c.ricorrenza.saltate || []);
+      if (appuntamento.dataSerie) saltate.add(appuntamento.dataSerie);
+      await salvaImpostazioniCliente(c.id, {
+        ricorrenza: { ...c.ricorrenza, saltate: [...saltate] }
+      });
+    }
+  }
+  await eliminaAppuntamento(appuntamento.id);
+}
+
+/** Ferma la serie: cancella le occorrenze future e spegne la ricorrenza. */
+async function fermaSerie(appuntamento, { daGiorno = null } = {}) {
+  const da = daGiorno || appuntamento.giorno;
+  const future = await occorrenzeSerie(appuntamento.serieId, { daGiorno: da });
+  for (const a of future) await db.elimina('appuntamenti', a.id);
+
+  if (appuntamento.clienteId) {
+    const c = await leggiCliente(appuntamento.clienteId);
+    if (c && c.ricorrenza) {
+      await salvaImpostazioniCliente(c.id, {
+        ricorrenza: { ...c.ricorrenza, attiva: false }
+      });
+    }
+  }
+  document.dispatchEvent(new CustomEvent('dati:cambiati'));
+  return future.length;
+}
+
+/** Sposta tutte le occorrenze future a un nuovo orario e/o cadenza. */
+async function spostaSerie(appuntamento, { ora = null, cadenzaGiorni = null } = {}) {
+  const future = await occorrenzeSerie(appuntamento.serieId, { daGiorno: appuntamento.giorno });
+  if (ora) {
+    for (const a of future) {
+      await salvaAppuntamento({ ...a, inizio: `${a.giorno}T${ora}`, silenzioso: true });
+    }
+  }
+  if (appuntamento.clienteId) {
+    const c = await leggiCliente(appuntamento.clienteId);
+    if (c && c.ricorrenza) {
+      const r = { ...c.ricorrenza };
+      if (ora) r.ora = ora;
+      if (cadenzaGiorni) r.cadenzaGiorni = Number(cadenzaGiorni);
+      await salvaImpostazioniCliente(c.id, { ricorrenza: r });
+    }
+  }
+  document.dispatchEvent(new CustomEvent('dati:cambiati'));
+  return future.length;
+}
+
+return { ORIZZONTE_GIORNI, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, fermaSerie, finestreAttesa, finestreLavoro, generaOccorrenze, giornataCompleta, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, servizioPerCliente, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
 })();
 
 /* ======================= js/ponte.js ======================= */
@@ -2457,7 +2868,7 @@ MOD.ponte = (function () {
 const db = MOD.db;
 const store = MOD.store;
 const cfg = MOD.cfgApp;
-const { dayKey, addDays, nomeCompleto, normalizza, isoLocale, telefonoLeggibile } = MOD.util;
+const { dayKey, addDays, nomeCompleto, normalizza, isoLocale, telefonoLeggibile, minutiDaHHMM } = MOD.util;
 
 const GIORNI_STORICO = 550;   // ~18 mesi di appuntamenti passati nel pacchetto
 const GIORNI_FUTURO  = 400;
@@ -2487,17 +2898,29 @@ async function costruisciPacchetto() {
     .sort((x, y) => x.inizio.localeCompare(y.inizio))
     .map(a => {
       const c = perId[a.clienteId];
+      // I tratti si calcolano qui, dove non ci sono limiti di tempo: il server
+      // deve solo leggerli. Sono anche il motivo per cui le risposte di Claude
+      // sulla disponibilità restano giuste dopo la correzione della posa.
+      const trattiAssoluti = store.tratti(a).map(t => ({
+        t: t.tipo === 'attesa' ? 'a' : 'l',
+        da: minutiDaHHMM(a.inizio.slice(11)) + t.da,
+        a: minutiDaHHMM(a.inizio.slice(11)) + t.a
+      }));
+
       const riga = {
         giorno: a.giorno,
         ora: a.inizio.slice(11),
-        cliente: c ? nomeCompleto(c) : 'cliente eliminata',
+        cliente: store.nomeDiAppuntamento(a, c),
         telefono: c && c.telefono ? telefonoLeggibile(c.telefono) : '',
         servizi: (a.servizi || []).map(s => s.nome),
         durata: a.durata,
         posa: a.posaMinuti || 0,
         prezzo: Number(a.prezzo) || 0,
-        stato: a.stato
+        stato: a.stato,
+        tratti: trattiAssoluti
       };
+      if (!a.clienteId) riga.senzaScheda = true;
+      if (a.serieId) riga.fisso = true;
       if (a.note) riga.note = a.note;
       if (c && c.allergie) riga.allergie = c.allergie;
       return riga;
@@ -2506,6 +2929,7 @@ async function costruisciPacchetto() {
   /* --- clienti, con i riepiloghi già calcolati --- */
   const perCliente = {};
   for (const a of appuntamenti) {
+    if (!a.clienteId) continue;                 // fissate con il solo nome
     (perCliente[a.clienteId] ||= []).push(a);
   }
 
@@ -2531,6 +2955,9 @@ async function costruisciPacchetto() {
       promemoria: !!c.promemoriaAttivo,
       serviziAbituali: Object.entries(conteggio).sort((a, b) => b[1] - a[1]).slice(0, 3).map(x => x[0])
     };
+    if (c.ricorrenza && c.ricorrenza.attiva) {
+      riga.appuntamentoFisso = { ogniGiorni: c.ricorrenza.cadenzaGiorni, ora: c.ricorrenza.ora };
+    }
     if (c.allergie) riga.allergie = c.allergie;
     if (c.note) riga.note = c.note;
     return riga;
@@ -2722,7 +3149,7 @@ const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
 const ponte = MOD.ponte;
-const { dataEstesa, ora, euro, esc, addDays, dayKey, isToday, minutiDaHHMM, hhmmDaMinuti, durataUmana, nomeCompleto, iniziali, daIsoLocale, telefonoLeggibile } = MOD.util;
+const { dataEstesa, dataBreve, ora, euro, esc, addDays, dayKey, isToday, minutiDaHHMM, hhmmDaMinuti, durataUmana, nomeCompleto, iniziali, daIsoLocale, telefonoLeggibile, debounce } = MOD.util;
 
 let dataCorrente = new Date();
 let apriNuovo = null;      // iniettata da app.js per evitare dipendenze circolari
@@ -2737,6 +3164,7 @@ function inizializza({ suNuovoAppuntamento, suApriCliente }) {
   document.getElementById('giorno-succ').addEventListener('click', () => vaiA(addDays(dataCorrente, 1)));
   document.getElementById('vai-oggi').addEventListener('click', () => vaiA(new Date()));
   document.getElementById('btn-nuovo').addEventListener('click', () => apriNuovo({ data: dataCorrente }));
+  document.getElementById('cerca-scheda').addEventListener('click', () => apriRicercaScheda());
 
   const agenda = document.getElementById('agenda');
   ui.su(agenda, 'click', '.app-blocco', (e, el) => mostraDettaglio(el.dataset.id));
@@ -2839,15 +3267,25 @@ async function disegna() {
     const corto = alt < 62;
     const colore = a._colore || 'var(--oro)';
 
-    const nome = a.cliente ? nomeCompleto(a.cliente) : 'Cliente eliminata';
+    const nome = a.nomeVisualizzato || (a.cliente ? nomeCompleto(a.cliente) : 'Cliente eliminata');
     const servizi = (a.servizi || []).map(s => s.nome).join(', ') || 'Appuntamento';
-    const posaAlt = a.posaMinuti ? Math.min(alt - 2, a.posaMinuti * ppm) : 0;
+
+    // Le attese vanno disegnate dove cadono davvero: in mezzo, non in fondo.
+    const bandeAttesa = store.tratti(a)
+      .filter(t => t.tipo === 'attesa')
+      .map(t => {
+        const cima = t.da * ppm;
+        const altezza = (t.a - t.da) * ppm;
+        return altezza > 6
+          ? `<div class="app-blocco__posa" style="top:${cima}px;height:${altezza}px" title="posa: sei libera"></div>`
+          : '';
+      }).join('');
 
     html += `
       <div class="app-blocco${corto ? ' app-blocco--corto' : ''} app-blocco--${esc(a.stato)}"
            data-id="${esc(a.id)}"
            style="top:${top}px;height:${alt}px;left:calc(${sinistra}% + 2px);width:calc(${larghezza}% - 6px);border-left-color:${esc(colore)}">
-        ${posaAlt > 8 ? `<div class="app-blocco__posa" style="height:${posaAlt}px"></div>` : ''}
+        ${bandeAttesa}
         <div class="app-blocco__ora">${ora(daIsoLocale(a.inizio))}${corto ? '' : ` – ${ora(new Date(daIsoLocale(a.inizio).getTime() + a.durata * 60000))}`}</div>
         <div class="app-blocco__nome">${esc(nome)}</div>
         ${corto ? '' : `<div class="app-blocco__servizi">${esc(servizi)}</div>`}
@@ -2855,6 +3293,8 @@ async function disegna() {
           <div class="app-blocco__coda">
             ${agenda.mostraPrezzi && a.prezzo ? `<span class="pillola pillola--oro">${euro(a.prezzo, valuta)}</span>` : ''}
             ${a.posaMinuti ? `<span class="pillola">posa ${a.posaMinuti}′</span>` : ''}
+            ${a.serieId ? '<span class="pillola" title="Appuntamento fisso">↻</span>' : ''}
+            ${!a.clienteId && a.clienteNome ? '<span class="pillola" title="Senza scheda cliente">senza scheda</span>' : ''}
             <span class="segno-invio segno-invio--${a.confermaInviata ? 'ok' : 'no'}"
                   title="${a.confermaInviata ? 'Conferma inviata' : 'Conferma non ancora inviata'}">${a.confermaInviata ? '✓' : '!'}</span>
           </div>`}
@@ -2929,7 +3369,8 @@ function disponiInColonne(appuntamenti) {
 async function mostraDettaglio(id) {
   const a = await store.leggiAppuntamento(id);
   if (!a) return;
-  const cliente = await store.leggiCliente(a.clienteId);
+  const cliente = a.clienteId ? await store.leggiCliente(a.clienteId) : null;
+  const senzaScheda = store.senzaScheda(a);
   const valuta = cfg.get('incassi').valuta;
   const d = daIsoLocale(a.inizio);
   const fine = new Date(d.getTime() + a.durata * 60000);
@@ -2941,9 +3382,17 @@ async function mostraDettaglio(id) {
      </div>`).join('') || '<p class="testo-tenue">Nessun servizio indicato</p>';
 
   const p = ui.pannello({
-    titolo: cliente ? nomeCompleto(cliente) : 'Appuntamento',
-    sottotitolo: `${dataEstesa(d)} · ${ora(d)}–${ora(fine)}`,
+    titolo: store.nomeDiAppuntamento(a, cliente),
+    sottotitolo: `${dataEstesa(d)} · ${ora(d)}–${ora(fine)}${a.serieId ? ' · appuntamento fisso ↻' : ''}`,
     contenuto: `
+      ${senzaScheda ? `
+        <div class="avviso-riquadro avviso-riquadro--attenzione">
+          <span>?</span><div><strong>Fissata con il solo nome</strong>
+          Non ha ancora una scheda: niente storico, niente WhatsApp. Creandola adesso,
+          questo appuntamento entra subito nel suo storico.</div>
+        </div>
+        <button class="btn btn--principale btn--largo" data-azione="crea-scheda" style="margin:12px 0 16px">Crea la scheda di ${esc(a.clienteNome || '')}</button>` : ''}
+
       ${cliente && cliente.allergie ? `
         <div class="riquadro-allergie">
           <span>⚠</span><div><strong>Attenzione</strong>${esc(cliente.allergie)}</div>
@@ -2951,6 +3400,18 @@ async function mostraDettaglio(id) {
 
       <div class="blocco" style="padding:16px;margin-bottom:14px">
         ${servizi}
+        ${a.posaMinuti ? `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--bordo-tenue)">
+          <span class="campo__etichetta">Come si svolge</span>
+          ${store.tratti(a).map(t => {
+            const daO = ora(new Date(d.getTime() + t.da * 60000));
+            const aO = ora(new Date(d.getTime() + t.a * 60000));
+            return `<div class="riga-info" style="padding:5px 0;border:0">
+              <span class="riga-info__etichetta" style="font-variant-numeric:tabular-nums">${daO} – ${aO}</span>
+              <span class="riga-info__valore" style="font-weight:${t.tipo === 'attesa' ? '700' : '500'};color:${t.tipo === 'attesa' ? 'var(--oro-scuro)' : 'var(--bruno-medio)'}">
+                ${t.tipo === 'attesa' ? 'posa — sei libera' : esc(t.servizio || 'lavoro')}
+              </span></div>`;
+          }).join('')}
+        </div>` : ''}
         <div class="riga-info" style="border-top:1.5px solid var(--bordo);margin-top:6px;padding-top:11px">
           <span class="riga-info__etichetta"><strong>Totale</strong> · ${durataUmana(a.durata)}${a.posaMinuti ? ` (di cui ${a.posaMinuti}′ di posa)` : ''}</span>
           <span class="riga-info__valore" style="font-size:18px">${euro(a.prezzo, valuta)}</span>
@@ -2967,7 +3428,7 @@ async function mostraDettaglio(id) {
         </div>
       </div>
 
-      <div class="campo">
+      <div class="campo" ${senzaScheda ? 'hidden' : ''}>
         <span class="campo__etichetta">WhatsApp</span>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn ${a.confermaInviata ? 'btn--fantasma' : 'btn--verde'}" data-wa="conferma" type="button">
@@ -2982,7 +3443,7 @@ async function mostraDettaglio(id) {
     `,
     azioni: `
       <button class="btn btn--fantasma" data-azione="elimina" style="margin-right:auto;color:var(--rosso)">Elimina</button>
-      <button class="btn btn--fantasma" data-azione="cliente">Scheda cliente</button>
+      ${senzaScheda ? '' : '<button class="btn btn--fantasma" data-azione="cliente">Scheda cliente</button>'}
       <button class="btn btn--principale" data-azione="modifica">Modifica</button>
     `
   });
@@ -3004,7 +3465,26 @@ async function mostraDettaglio(id) {
     } else ui.errore('Numero non valido');
   }));
 
+  const creaScheda = p.elemento.querySelector('[data-azione="crea-scheda"]');
+  if (creaScheda) creaScheda.addEventListener('click', () => {
+    p.chiudi();
+    setTimeout(() => moduloCreaScheda(a), 250);
+  });
+
   p.elemento.querySelector('[data-azione="elimina"]').addEventListener('click', async () => {
+    if (a.serieId) {
+      const scelta = await chiediSuLaSerie(a, 'eliminare');
+      if (scelta === 'annulla') return;
+      if (scelta === 'tutti') {
+        const quanti = await store.fermaSerie(a);
+        ui.ok(`Serie fermata: ${quanti} appuntamenti tolti`);
+      } else {
+        await store.saltaOccorrenza(a);
+        ui.ok('Appuntamento eliminato, la serie continua');
+      }
+      p.chiudi();
+      return;
+    }
     const sicuro = await ui.conferma({
       titolo: 'Eliminare l\'appuntamento?',
       testo: 'L\'appuntamento sparisce dall\'agenda e dallo storico della cliente. L\'operazione non si può annullare.',
@@ -3018,24 +3498,197 @@ async function mostraDettaglio(id) {
     if (cliente) setTimeout(() => apriCliente(cliente.id), 260);
   });
 
-  p.elemento.querySelector('[data-azione="modifica"]').addEventListener('click', () => {
+  p.elemento.querySelector('[data-azione="modifica"]').addEventListener('click', async () => {
+    if (a.serieId) {
+      const scelta = await chiediSuLaSerie(a, 'spostare');
+      if (scelta === 'annulla') return;
+      if (scelta === 'tutti') {
+        p.chiudi();
+        setTimeout(() => moduloSpostaSerie(a), 250);
+        return;
+      }
+    }
     p.chiudi();
     setTimeout(() => apriNuovo({ appuntamento: a }), 260);
   });
 }
 
-return { dataVisualizzata, disegna, inizializza, mostraDettaglio, vaiA };
+/* ---------- lente: trova una scheda senza uscire dal calendario ---------- */
+
+function apriRicercaScheda() {
+  const p = ui.pannello({
+    titolo: 'Cerca una cliente',
+    sottotitolo: 'Bastano le prime lettere del nome, o parte del numero.',
+    contenuto: `
+      <div class="ricerca-avvolgi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input class="input" id="lente-testo" type="search" placeholder="Nome o numero…" autocomplete="off" data-fuoco>
+      </div>
+      <div class="risultati-clienti" id="lente-risultati" style="border-top:0;margin-top:10px;border-radius:var(--raggio-s);max-height:46vh"></div>`
+  });
+
+  const campo = p.elemento.querySelector('#lente-testo');
+  const risultati = p.elemento.querySelector('#lente-risultati');
+
+  const cerca = async () => {
+    const trovate = await store.cercaClienti(campo.value, 30);
+    if (!trovate.length) {
+      risultati.innerHTML = `<div style="padding:20px;text-align:center" class="testo-tenue">
+        ${campo.value.trim() ? 'Nessuna cliente con questo nome.' : 'Scrivi qualcosa per cercare.'}</div>`;
+      return;
+    }
+    const righe = [];
+    for (const c of trovate) {
+      const s = await store.storicoCliente(c.id);
+      const prossimo = s.prossimo
+        ? `<span class="pillola pillola--oro">${esc(dataBreve(daIsoLocale(s.prossimo.inizio)))} · ${esc(s.prossimo.inizio.slice(11))}</span>`
+        : '';
+      righe.push(`
+        <div class="riga-cliente" data-id="${esc(c.id)}">
+          <div class="pastiglia">${esc(iniziali(c.nome, c.cognome))}</div>
+          <div style="min-width:0;flex:1">
+            <div class="riga-cliente__nome">${esc(nomeCompleto(c))}</div>
+            <div class="riga-cliente__dettaglio">
+              ${c.telefono ? esc(telefonoLeggibile(c.telefono)) : 'senza numero'} ·
+              ${s.visite} ${s.visite === 1 ? 'visita' : 'visite'}
+              ${c.allergie ? ' · <span style="color:var(--rosso)">⚠ allergie</span>' : ''}
+            </div>
+          </div>
+          <div class="riga-cliente__coda">${prossimo}</div>
+        </div>`);
+    }
+    risultati.innerHTML = righe.join('');
+  };
+
+  campo.addEventListener('input', debounce(cerca, 130));
+  campo.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const prima = risultati.querySelector('.riga-cliente');
+      if (prima) prima.click();
+    }
+  });
+  ui.su(risultati, 'click', '.riga-cliente', (e, el) => {
+    const id = el.dataset.id;
+    p.chiudi();
+    setTimeout(() => apriCliente(id), 240);
+  });
+  cerca();
+}
+
+/* =========================================================================
+   APPUNTAMENTI FISSI: solo questo, o tutti?
+   ========================================================================= */
+
+function chiediSuLaSerie(appuntamento, verbo) {
+  return new Promise((risolvi) => {
+    let deciso = false;
+    const p = ui.pannello({
+      titolo: `Vuoi ${verbo} solo questo, o tutti?`,
+      sottotitolo: 'Questo appuntamento fa parte di una serie fissa.',
+      contenuto: `<p class="testo-lungo">
+        ${esc(dataEstesa(daIsoLocale(appuntamento.inizio)))} alle ${esc(appuntamento.inizio.slice(11))}.<br><br>
+        Scegliendo <strong>solo questo</strong>, la serie continua normalmente nelle settimane successive.
+      </p>`,
+      azioni: `
+        <button class="btn btn--fantasma" data-s="annulla">Annulla</button>
+        <button class="btn btn--fantasma" data-s="tutti">Tutti da qui in avanti</button>
+        <button class="btn btn--principale" data-s="questo" data-fuoco>Solo questo</button>`,
+      alChiudere: () => { if (!deciso) risolvi('annulla'); }
+    });
+    p.elemento.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => {
+      deciso = true; risolvi(b.dataset.s); p.chiudi();
+    }));
+  });
+}
+
+/** Sposta l'orario, o cambia la cadenza, di tutte le occorrenze future. */
+function moduloSpostaSerie(appuntamento) {
+  const p = ui.pannello({
+    titolo: 'Sposta tutta la serie',
+    sottotitolo: 'Vale per questo appuntamento e per tutti quelli successivi.',
+    contenuto: `
+      <div class="campo">
+        <label class="campo__etichetta" for="ss-ora">Nuovo orario</label>
+        <input class="input" id="ss-ora" type="time" step="300" value="${esc(appuntamento.inizio.slice(11))}" style="max-width:180px" data-fuoco>
+        <p class="campo__aiuto">Il giorno della settimana e la cadenza si cambiano dall'ingranaggio della scheda cliente.</p>
+      </div>`,
+    azioni: `<button class="btn btn--fantasma" data-x="no">Annulla</button>
+             <button class="btn btn--principale" data-x="si">Sposta tutti</button>`
+  });
+  p.elemento.querySelector('[data-x="no"]').addEventListener('click', () => p.chiudi());
+  p.elemento.querySelector('[data-x="si"]').addEventListener('click', async () => {
+    const ora = p.elemento.querySelector('#ss-ora').value;
+    if (!ora) return;
+    const quanti = await store.spostaSerie(appuntamento, { ora });
+    ui.ok(`${quanti} appuntamenti spostati alle ${ora}`);
+    p.chiudi();
+  });
+}
+
+/* =========================================================================
+   CREARE LA SCHEDA A CHI ERA STATA FISSATA CON IL SOLO NOME
+   ========================================================================= */
+
+function moduloCreaScheda(appuntamento) {
+  const parti = (appuntamento.clienteNome || '').trim().split(/\s+/);
+  const p = ui.pannello({
+    titolo: 'Crea la scheda',
+    sottotitolo: 'Questo appuntamento e tutti quelli con lo stesso nome finiranno nel suo storico.',
+    contenuto: `
+      <div class="riga-campi">
+        <div class="campo">
+          <label class="campo__etichetta" for="cs-nome">Nome</label>
+          <input class="input" id="cs-nome" value="${esc(parti[0] || '')}" data-fuoco autocomplete="off">
+        </div>
+        <div class="campo">
+          <label class="campo__etichetta" for="cs-cognome">Cognome</label>
+          <input class="input" id="cs-cognome" value="${esc(parti.slice(1).join(' '))}" autocomplete="off">
+        </div>
+      </div>
+      <div class="campo">
+        <label class="campo__etichetta" for="cs-tel">Telefono</label>
+        <input class="input" id="cs-tel" type="tel" inputmode="tel" placeholder="333 123 4567" autocomplete="off">
+      </div>
+      <div class="campo" style="margin-bottom:0">
+        <label class="campo__etichetta" for="cs-allergie">Allergie e sensibilità</label>
+        <textarea class="area" id="cs-allergie" style="min-height:64px" placeholder="Se ce ne sono, compaiono in rosso su ogni appuntamento"></textarea>
+      </div>`,
+    azioni: `<button class="btn btn--fantasma" data-x="no">Annulla</button>
+             <button class="btn btn--principale" data-x="si">Crea la scheda</button>`
+  });
+
+  p.elemento.querySelector('[data-x="no"]').addEventListener('click', () => p.chiudi());
+  p.elemento.querySelector('[data-x="si"]').addEventListener('click', async () => {
+    const nome = p.elemento.querySelector('#cs-nome').value.trim();
+    if (!nome) { ui.errore('Il nome è obbligatorio'); return; }
+    const esito = await store.creaSchedaDaAppuntamento(appuntamento.id, {
+      nome,
+      cognome: p.elemento.querySelector('#cs-cognome').value.trim(),
+      telefono: p.elemento.querySelector('#cs-tel').value.trim(),
+      allergie: p.elemento.querySelector('#cs-allergie').value.trim()
+    });
+    p.chiudi();
+    if (esito) {
+      ui.ok(esito.agganciati > 1
+        ? `Scheda creata, con ${esito.agganciati} appuntamenti nello storico`
+        : 'Scheda creata');
+      setTimeout(() => apriCliente(esito.cliente.id), 300);
+    }
+  });
+}
+
+return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, mostraDettaglio, vaiA };
 })();
 
 /* ======================= js/views/clienti.js ======================= */
 MOD.vClienti = (function () {
-/* Charme — vista Clienti: anagrafica, ricerca e scheda con lo storico. */
+/* Charme — vista Clienti: elenco, ricerca e scheda cliente con lo storico. */
 
 const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
-const { esc, iniziali, nomeCompleto, telefonoLeggibile, tempoFa, euro, durataUmana, dataBreve, dataEstesa, daIsoLocale, ora: oraDi, debounce, normalizza } = MOD.util;
+const { esc, iniziali, nomeCompleto, telefonoLeggibile, tempoFa, euro, durataUmana, dataBreve, dataEstesa, daIsoLocale, ora: oraDi, debounce, normalizza, dayKey, fromDayKey, addDays } = MOD.util;
 
 let apriNuovoAppuntamento = null;
 let filtro = '';
@@ -3131,7 +3784,7 @@ async function scheda(id) {
     ? s.passati.slice(0, 40).map(a => {
         const d = daIsoLocale(a.inizio);
         const servizi = (a.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento';
-        return `<div class="linea-storico">
+        return `<div class="linea-storico linea-storico--tocca" data-visita="${esc(a.id)}">
           <div class="linea-storico__data">${esc(dataBreve(d))}<br><span style="opacity:.65">${esc(oraDi(d))}</span></div>
           <div class="linea-storico__corpo">
             <div class="linea-storico__servizi">${esc(servizi)}</div>
@@ -3145,10 +3798,10 @@ async function scheda(id) {
   const prossimi = s.futuri.length
     ? s.futuri.map(a => {
         const d = daIsoLocale(a.inizio);
-        return `<div class="linea-storico">
+        return `<div class="linea-storico linea-storico--tocca" data-visita="${esc(a.id)}">
           <div class="linea-storico__data">${esc(dataBreve(d))}<br><span style="opacity:.65">${esc(oraDi(d))}</span></div>
           <div class="linea-storico__corpo">
-            <div class="linea-storico__servizi">${esc((a.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento')}</div>
+            <div class="linea-storico__servizi">${esc((a.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento')}${a.serieId ? ' ↻' : ''}</div>
             <div class="linea-storico__note">${a.confermaInviata ? '✓ conferma inviata' : 'conferma non ancora inviata'}</div>
           </div>
           <div class="linea-storico__prezzo">${euro(a.prezzo, valuta)}</div>
@@ -3169,6 +3822,12 @@ async function scheda(id) {
             ${c.promemoriaAttivo ? '' : ' · promemoria disattivato'}
           </div>
         </div>
+        <button class="btn-icona" data-x="ingranaggio" title="Impostazioni di questa cliente" aria-label="Impostazioni di questa cliente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3.2"/>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.1a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4 1.7 1.7 0 0 0-1.6 1z"/>
+          </svg>
+        </button>
         <button class="btn btn--principale" data-x="appuntamento">+ Appuntamento</button>
       </div>
 
@@ -3188,6 +3847,7 @@ async function scheda(id) {
       ${prossimi ? `<h3 style="font-size:16px;margin:18px 0 4px">Prossimi appuntamenti</h3>${prossimi}` : ''}
 
       <h3 style="font-size:16px;margin:20px 0 4px">Storico</h3>
+      <p class="testo-tenue" style="margin-bottom:2px">Tocca una riga per annotare com'è andata o per rifissare gli stessi servizi.</p>
       ${storico}
     `,
     azioni: `
@@ -3195,6 +3855,15 @@ async function scheda(id) {
       ${c.telefono ? '<button class="btn btn--fantasma" data-x="whatsapp">WhatsApp</button>' : ''}
       <button class="btn btn--principale" data-x="modifica">Modifica</button>
     `
+  });
+
+  p.elemento.querySelector('[data-x="ingranaggio"]').addEventListener('click', () => {
+    pannelloImpostazioni(c, () => { p.chiudi(); setTimeout(() => scheda(id), 260); });
+  });
+
+  ui.su(p.elemento, 'click', '[data-visita]', (e, el) => {
+    const visita = s.tutti.find(x => x.id === el.dataset.visita);
+    if (visita) pannelloVisita(visita, c, () => { p.chiudi(); setTimeout(() => scheda(id), 260); });
   });
 
   p.elemento.querySelector('[data-x="appuntamento"]').addEventListener('click', () => {
@@ -3298,7 +3967,373 @@ function modulo(cliente = null) {
   });
 }
 
-return { disegna, inizializza, modulo, scheda };
+/* =========================================================================
+   IL PANNELLINO DI UNA VISITA
+   Toccando una riga dello storico: la nota di quella volta, e il pulsante
+   per rifissare gli stessi servizi. Le due cose nello stesso gesto.
+   ========================================================================= */
+
+function pannelloVisita(appuntamento, cliente, alChiudere) {
+  const valuta = cfg.get('incassi').valuta;
+  const d = daIsoLocale(appuntamento.inizio);
+  const passato = appuntamento.inizio < new Date().toISOString().slice(0, 16);
+  const servizi = (appuntamento.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento';
+
+  const p = ui.pannello({
+    titolo: dataEstesa(d),
+    sottotitolo: `${oraDi(d)} · ${servizi} · ${euro(appuntamento.prezzo, valuta)}`,
+    contenuto: `
+      ${appuntamento.serieId ? `<div class="avviso-riquadro avviso-riquadro--info" style="margin-bottom:14px">
+        <span>↻</span><div><strong>Appuntamento fisso</strong>
+        Fa parte di una serie. Le modifiche alla serie si fanno dall'ingranaggio della scheda.</div></div>` : ''}
+
+      <div class="campo">
+        <label class="campo__etichetta" for="v-nota">Com'è andata</label>
+        <textarea class="area" id="v-nota" data-fuoco
+          placeholder="Es. schiarito troppo sulle punte · vuole provare più corto · ha portato una foto">${esc(appuntamento.note || '')}</textarea>
+        <p class="campo__aiuto">Resta agganciata a questa data. La rileggi la prossima volta che viene.</p>
+      </div>
+
+      <div class="campo" style="margin-bottom:0">
+        <span class="campo__etichetta">Dettaglio</span>
+        ${(appuntamento.servizi || []).map(x => `
+          <div class="riga-info">
+            <span class="riga-info__etichetta">${esc(x.nome)} · ${durataUmana(x.durata)}${x.posaMinuti ? ` (${x.posaMinuti}′ di posa)` : ''}</span>
+            <span class="riga-info__valore">${euro(x.prezzo, valuta)}</span>
+          </div>`).join('') || '<p class="testo-tenue">Nessun servizio registrato.</p>'}
+      </div>
+    `,
+    azioni: `
+      <button class="btn btn--fantasma" data-x="chiudi">Chiudi</button>
+      ${passato ? '<button class="btn btn--principale" data-x="ripeti">Ripeti questo appuntamento</button>' : ''}
+    `
+  });
+
+  const salvaNota = async () => {
+    const nota = p.elemento.querySelector('#v-nota').value.trim();
+    if (nota === (appuntamento.note || '')) return false;
+    await store.salvaAppuntamento({ ...appuntamento, note: nota });
+    return true;
+  };
+
+  p.elemento.querySelector('[data-x="chiudi"]').addEventListener('click', async () => {
+    const cambiata = await salvaNota();
+    p.chiudi();
+    if (cambiata) { ui.ok('Nota salvata'); if (alChiudere) alChiudere(); }
+  });
+
+  const ripeti = p.elemento.querySelector('[data-x="ripeti"]');
+  if (ripeti) ripeti.addEventListener('click', async () => {
+    await salvaNota();
+    p.chiudi();
+    setTimeout(() => apriNuovoAppuntamento({
+      cliente,
+      serviziIniziali: appuntamento.servizi || []
+    }), 250);
+  });
+}
+
+/* =========================================================================
+   L'INGRANAGGIO
+   Le cose che si impostano una volta e non si toccano più: appuntamento
+   fisso, servizi abituali, prezzi suoi, promemoria.
+   ========================================================================= */
+
+const GIORNI_SETTIMANA = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+
+const CADENZE = [
+  { giorni: 7,  etichetta: 'ogni settimana' },
+  { giorni: 14, etichetta: 'ogni 2 settimane' },
+  { giorni: 21, etichetta: 'ogni 3 settimane' },
+  { giorni: 28, etichetta: 'ogni 4 settimane' }
+];
+
+async function pannelloImpostazioni(cliente, alChiudere) {
+  const valuta = cfg.get('incassi').valuta;
+  const servizi = await store.elencoServizi({ soloAttivi: true });
+  const r = { ...store.ricorrenzaVuota(), ...(cliente.ricorrenza || {}) };
+  const abituali = new Set(cliente.serviziAbituali || []);
+  const prezzi = { ...(cliente.prezzi || {}) };
+
+  if (!r.dataInizio) r.dataInizio = store.primaDataPerGiorno(new Date().getDay());
+
+  const p = ui.pannello({
+    titolo: `Impostazioni di ${nomeCompleto(cliente)}`,
+    sottotitolo: 'Si impostano una volta e restano. Non servono nell\'uso di tutti i giorni.',
+    ampio: true,
+    contenuto: '<div id="ing"></div>',
+    azioni: `<button class="btn btn--fantasma" data-x="annulla">Annulla</button>
+             <button class="btn btn--principale" data-x="salva">Salva</button>`
+  });
+
+  const radice = p.elemento.querySelector('#ing');
+
+  function disegna() {
+    const giornoAttuale = fromDayKey(r.dataInizio).getDay();
+    const cadenzaNota = CADENZE.some(c => c.giorni === Number(r.cadenzaGiorni)) ? '' : 'libera';
+
+    radice.innerHTML = `
+      <!-- ---------- appuntamento fisso ---------- -->
+      <div class="blocco" style="max-width:none">
+        <h3 class="blocco__titolo">↻ Appuntamento fisso</h3>
+        <p class="blocco__nota">Per chi viene sempre lo stesso giorno alla stessa ora.
+        L'app tiene coperti tre mesi in avanti e li rinnova da sola: non finiscono mai.</p>
+
+        <label class="interruttore">
+          <input type="checkbox" id="r-attiva" ${r.attiva ? 'checked' : ''}>
+          <span class="interruttore__leva"></span>
+          <span class="interruttore__testo">Attivo</span>
+        </label>
+
+        <div id="r-dettagli" style="${r.attiva ? '' : 'display:none'};padding-top:10px">
+          <div class="riga-campi--tre riga-campi">
+            <div class="campo">
+              <label class="campo__etichetta" for="r-giorno">Giorno</label>
+              <select class="scelta" id="r-giorno">
+                ${GIORNI_SETTIMANA.map((g, i) => `<option value="${i}" ${i === giornoAttuale ? 'selected' : ''}>${g}</option>`).join('')}
+              </select>
+            </div>
+            <div class="campo">
+              <label class="campo__etichetta" for="r-ora">Ora</label>
+              <input class="input" id="r-ora" type="time" step="300" value="${esc(r.ora)}">
+            </div>
+            <div class="campo">
+              <label class="campo__etichetta" for="r-cadenza">Ogni quanto</label>
+              <select class="scelta" id="r-cadenza">
+                ${CADENZE.map(c => `<option value="${c.giorni}" ${Number(r.cadenzaGiorni) === c.giorni ? 'selected' : ''}>${c.etichetta}</option>`).join('')}
+                <option value="libera" ${cadenzaNota ? 'selected' : ''}>ogni tot giorni…</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="campo" id="r-libera-avvolgi" style="${cadenzaNota ? '' : 'display:none'}">
+            <label class="campo__etichetta" for="r-giorni">Ogni quanti giorni</label>
+            <input class="input" id="r-giorni" type="number" min="1" max="180" value="${esc(r.cadenzaGiorni)}" style="max-width:160px">
+          </div>
+
+          <div class="campo">
+            <span class="campo__etichetta">Servizi da mettere ogni volta</span>
+            <div class="chip-servizi">
+              ${servizi.map(s => {
+                const t = store.tariffaPerCliente(cliente, s);
+                const scelto = (r.serviziIds || []).includes(s.id);
+                return `<button class="chip${scelto ? ' is-scelto' : ''}" data-rserv="${esc(s.id)}" type="button">
+                  ${esc(s.nome)}<span class="chip__meta">${t.durata}′ · ${euro(t.prezzo, valuta)}</span>
+                </button>`;
+              }).join('')}
+            </div>
+          </div>
+
+          <div id="r-anteprima"></div>
+        </div>
+      </div>
+
+      <!-- ---------- servizi abituali ---------- -->
+      <div class="blocco" style="max-width:none">
+        <h3 class="blocco__titolo">★ I soliti</h3>
+        <p class="blocco__nota">Due o tre servizi che fa sempre. Nella schermata di inserimento
+        compare un pulsante che li carica tutti insieme, in un tocco.</p>
+        <div class="chip-servizi">
+          ${servizi.map(s => {
+            const t = store.tariffaPerCliente(cliente, s);
+            return `<button class="chip${abituali.has(s.id) ? ' is-scelto' : ''}" data-abit="${esc(s.id)}" type="button">
+              ${esc(s.nome)}<span class="chip__meta">${t.durata}′ · ${euro(t.prezzo, valuta)}</span>
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- ---------- prezzi personalizzati ---------- -->
+      <div class="blocco" style="max-width:none">
+        <h3 class="blocco__titolo">✱ Prezzi e tempi suoi</h3>
+        <p class="blocco__nota">Valgono <strong>sempre</strong> per questa cliente, anche scegliendo il servizio
+        dal listino normale. Un aumento generale del listino non li tocca.</p>
+        <div id="p-elenco"></div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+          <div class="campo" style="margin:0;flex:1;min-width:200px">
+            <label class="campo__etichetta" for="p-nuovo">Aggiungi un servizio</label>
+            <select class="scelta" id="p-nuovo">
+              <option value="">scegli…</option>
+              ${servizi.filter(s => !prezzi[s.id]).map(s => `<option value="${esc(s.id)}">${esc(s.nome)}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn btn--fantasma" id="p-aggiungi" type="button">Aggiungi</button>
+        </div>
+      </div>
+
+      <!-- ---------- promemoria ---------- -->
+      <div class="blocco" style="max-width:none">
+        <h3 class="blocco__titolo">💬 Promemoria WhatsApp</h3>
+        <label class="interruttore">
+          <input type="checkbox" id="c-prom" ${cliente.promemoriaAttivo ? 'checked' : ''}>
+          <span class="interruttore__leva"></span>
+          <span class="interruttore__testo">Le manda il promemoria il giorno prima
+            <small>Se spento, non comparirà nella lista dei messaggi da inviare</small></span>
+        </label>
+      </div>`;
+
+    disegnaPrezzi();
+    disegnaAnteprima();
+    aggancia();
+  }
+
+  function disegnaPrezzi() {
+    const elenco = radice.querySelector('#p-elenco');
+    const righe = Object.keys(prezzi);
+    if (!righe.length) {
+      elenco.innerHTML = '<p class="testo-tenue">Nessun prezzo personalizzato: valgono quelli di listino.</p>';
+      return;
+    }
+    elenco.innerHTML = `
+      <table class="tabella">
+        <thead><tr><th>Servizio</th><th class="num">Durata</th><th class="num">Posa</th><th class="num">Prezzo</th><th></th></tr></thead>
+        <tbody>
+          ${righe.map(id => {
+            const s = servizi.find(x => x.id === id) || { nome: 'servizio eliminato', durata: 0, prezzo: 0, posaMinuti: 0 };
+            const v = prezzi[id];
+            return `<tr>
+              <td>${esc(s.nome)}<br><span class="testo-tenue">listino: ${s.durata}′ · ${euro(s.prezzo, valuta)}</span></td>
+              <td class="num"><input class="input" data-pz="${esc(id)}" data-campo="durata" type="number" min="5" step="5" value="${esc(v.durata)}" style="width:82px;min-height:40px;padding:6px 8px"></td>
+              <td class="num"><input class="input" data-pz="${esc(id)}" data-campo="posaMinuti" type="number" min="0" step="5" value="${esc(v.posaMinuti || 0)}" style="width:82px;min-height:40px;padding:6px 8px"></td>
+              <td class="num"><input class="input" data-pz="${esc(id)}" data-campo="prezzo" type="number" min="0" step="0.5" value="${esc(v.prezzo)}" style="width:92px;min-height:40px;padding:6px 8px"></td>
+              <td class="azioni"><button class="btn-icona" data-pz-via="${esc(id)}" title="Togli">&times;</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function disegnaAnteprima() {
+    const zona = radice.querySelector('#r-anteprima');
+    if (!zona) return;
+    if (!r.attiva) { zona.innerHTML = ''; return; }
+    const prossime = [];
+    let g = r.dataInizio;
+    const oggi = dayKey(new Date());
+    for (let i = 0; i < 60 && prossime.length < 5; i++) {
+      if (g >= oggi) prossime.push(g);
+      g = dayKey(addDays(fromDayKey(g), Number(r.cadenzaGiorni) || 7));
+    }
+    const scelti = (r.serviziIds || []).map(id => servizi.find(s => s.id === id)).filter(Boolean);
+    const durataTot = scelti.reduce((t, s) => t + store.tariffaPerCliente(cliente, s).durata, 0);
+    zona.innerHTML = `<div class="avviso-riquadro avviso-riquadro--info">
+      <span>↻</span><div><strong>Le prossime volte</strong>
+      ${prossime.map(x => esc(dataBreve(fromDayKey(x)))).join(' · ')} … alle ${esc(r.ora)}
+      ${scelti.length ? `<br>${esc(scelti.map(s => s.nome).join(', '))} · ${durataUmana(durataTot)}` : '<br>nessun servizio scelto: verranno creati appuntamenti vuoti da completare'}
+      </div></div>`;
+  }
+
+  function aggancia() {
+    const attiva = radice.querySelector('#r-attiva');
+    attiva.addEventListener('change', () => {
+      r.attiva = attiva.checked;
+      radice.querySelector('#r-dettagli').style.display = r.attiva ? '' : 'none';
+      disegnaAnteprima();
+    });
+
+    const giorno = radice.querySelector('#r-giorno');
+    if (giorno) giorno.addEventListener('change', () => {
+      r.dataInizio = store.primaDataPerGiorno(Number(giorno.value));
+      disegnaAnteprima();
+    });
+
+    const ora = radice.querySelector('#r-ora');
+    if (ora) ora.addEventListener('change', () => { r.ora = ora.value; disegnaAnteprima(); });
+
+    const cadenza = radice.querySelector('#r-cadenza');
+    if (cadenza) cadenza.addEventListener('change', () => {
+      const libera = cadenza.value === 'libera';
+      radice.querySelector('#r-libera-avvolgi').style.display = libera ? '' : 'none';
+      if (!libera) r.cadenzaGiorni = Number(cadenza.value);
+      disegnaAnteprima();
+    });
+    const giorni = radice.querySelector('#r-giorni');
+    if (giorni) giorni.addEventListener('change', () => {
+      r.cadenzaGiorni = Math.max(1, Number(giorni.value) || 7);
+      disegnaAnteprima();
+    });
+
+    ui.su(radice, 'click', '[data-rserv]', (e, el) => {
+      const id = el.dataset.rserv;
+      const elenco = new Set(r.serviziIds || []);
+      elenco.has(id) ? elenco.delete(id) : elenco.add(id);
+      r.serviziIds = [...elenco];
+      el.classList.toggle('is-scelto');
+      disegnaAnteprima();
+    });
+
+    ui.su(radice, 'click', '[data-abit]', (e, el) => {
+      const id = el.dataset.abit;
+      abituali.has(id) ? abituali.delete(id) : abituali.add(id);
+      el.classList.toggle('is-scelto');
+    });
+
+    radice.querySelector('#p-aggiungi').addEventListener('click', () => {
+      const sel = radice.querySelector('#p-nuovo');
+      const s = servizi.find(x => x.id === sel.value);
+      if (!s) { ui.avviso('Scegli prima un servizio'); return; }
+      prezzi[s.id] = { durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti || 0 };
+      disegna();
+    });
+
+    ui.su(radice, 'change', '[data-pz]', (e, el) => {
+      const id = el.dataset.pz;
+      if (!prezzi[id]) return;
+      prezzi[id][el.dataset.campo] = Number(el.value) || 0;
+    });
+
+    ui.su(radice, 'click', '[data-pz-via]', (e, el) => {
+      delete prezzi[el.dataset.pzVia];
+      disegna();
+    });
+  }
+
+  disegna();
+
+  p.elemento.querySelector('[data-x="annulla"]').addEventListener('click', () => p.chiudi());
+  p.elemento.querySelector('[data-x="salva"]').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    const eraAttiva = !!(cliente.ricorrenza && cliente.ricorrenza.attiva);
+
+    const aggiornato = await store.salvaImpostazioniCliente(cliente.id, {
+      ricorrenza: r,
+      serviziAbituali: [...abituali],
+      prezzi,
+      promemoriaAttivo: radice.querySelector('#c-prom').checked
+    });
+
+    if (r.attiva) {
+      const esito = await store.generaOccorrenze(aggiornato);
+      if (esito.create) {
+        ui.ok(`Impostazioni salvate — ${esito.create} appuntamenti fissati`);
+        if (esito.conflitti.length) {
+          setTimeout(() => ui.avviso(
+            `${esito.conflitti.length} ${esito.conflitti.length === 1 ? 'si sovrappone' : 'si sovrappongono'} ad altri appuntamenti: controllali in agenda`,
+            'info', 7000), 900);
+        }
+      } else ui.ok('Impostazioni salvate');
+    } else {
+      if (eraAttiva) {
+        const future = await store.occorrenzeSerie(r.serieId || '', { daGiorno: dayKey(new Date()) });
+        if (future.length) {
+          const via = await ui.conferma({
+            titolo: 'Tolgo anche gli appuntamenti già fissati?',
+            testo: `Ci sono ${future.length} appuntamenti futuri nati da questa serie. Vuoi cancellarli, o preferisci lasciarli in agenda?`,
+            confermaTesto: 'Cancellali', annullaTesto: 'Lasciali'
+          });
+          if (via) for (const a of future) await store.eliminaAppuntamento(a.id);
+        }
+      }
+      ui.ok('Impostazioni salvate');
+    }
+
+    p.chiudi();
+    document.dispatchEvent(new CustomEvent('dati:cambiati'));
+    if (alChiudere) alChiudere();
+  });
+}
+
+return { disegna, inizializza, modulo, pannelloImpostazioni, pannelloVisita, scheda };
 })();
 
 /* ======================= js/views/nuovo.js ======================= */
@@ -3315,13 +4350,14 @@ const { esc, dayKey, fromDayKey, addDays, dataEstesa, GIORNI_BREVI, MESI_BREVI, 
 
 let listino = null;   // caricato una volta e riusato
 
-async function apri({ data = new Date(), oraSuggerita = null, appuntamento = null, cliente = null } = {}) {
+async function apri({ data = new Date(), oraSuggerita = null, appuntamento = null, cliente = null, serviziIniziali = null } = {}) {
   listino = await store.listinoPerCategoria();
   const valuta = cfg.get('incassi').valuta;
   const modifica = !!appuntamento;
 
   const stato = {
     cliente: cliente || null,
+    nomeLibero: '',        // per chi viene fissata senza scheda
     servizi: [],
     data: appuntamento ? fromDayKey(appuntamento.giorno) : new Date(data),
     ora: appuntamento ? appuntamento.inizio.slice(11) : oraSuggerita,
@@ -3330,8 +4366,19 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     note: appuntamento ? appuntamento.note : ''
   };
 
+  if (serviziIniziali && serviziIniziali.length) {
+    const tutti = await store.elencoServizi();
+    stato.servizi = serviziIniziali.map(s => {
+      // Servizi di allora, prezzi di oggi: prima quelli della cliente, poi il listino.
+      const attuale = tutti.find(x => x.id === (s.servizioId || s.id));
+      if (attuale) return store.servizioPerCliente(stato.cliente, attuale);
+      return { id: s.servizioId || s.id, nome: s.nome, durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti || 0 };
+    });
+  }
+
   if (appuntamento) {
-    stato.cliente = await store.leggiCliente(appuntamento.clienteId);
+    stato.cliente = appuntamento.clienteId ? await store.leggiCliente(appuntamento.clienteId) : null;
+    stato.nomeLibero = appuntamento.clienteNome || '';
     const tutti = await store.elencoServizi();
     stato.servizi = (appuntamento.servizi || []).map(s =>
       tutti.find(x => x.id === s.servizioId) ||
@@ -3358,6 +4405,11 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   const btnSalva = p.elemento.querySelector('[data-azione="salva"]');
   const riepilogo = p.elemento.querySelector('#riepilogo-rapido');
   p.elemento.querySelector('[data-azione="annulla"]').addEventListener('click', () => p.chiudi());
+
+  // L'ordine di svolgimento decide dove cade l'attesa: i servizi con posa per primi.
+  const serviziOrdinati = () => store.ordinaServizi(stato.servizi.map(s => ({
+    servizioId: s.id, nome: s.nome, durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti || 0
+  })));
 
   const durata = () => stato.durataManuale != null
     ? stato.durataManuale
@@ -3433,6 +4485,16 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
 
   const zonaCliente = radice.querySelector('#zona-cliente');
 
+  /** Riporta i servizi già scelti alla tariffa della cliente selezionata. */
+  async function applicaTariffe() {
+    if (!stato.servizi.length) return;
+    const tutti = await store.elencoServizi();
+    stato.servizi = stato.servizi.map(s => {
+      const attuale = tutti.find(x => x.id === s.id);
+      return attuale ? store.servizioPerCliente(stato.cliente, attuale) : s;
+    });
+  }
+
   function disegnaCliente() {
     if (stato.cliente) {
       const c = stato.cliente;
@@ -3448,55 +4510,98 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
         ${c.allergie ? `<div class="riquadro-allergie" style="margin-top:10px"><span>⚠</span><div><strong>Attenzione</strong>${esc(c.allergie)}</div></div>` : ''}
       `;
       zonaCliente.querySelector('#cambia-cliente').addEventListener('click', () => {
-        stato.cliente = null; disegnaCliente(); aggiorna();
+        stato.cliente = null; stato.nomeLibero = '';
+        disegnaCliente(); disegnaServizi(); aggiorna();
       });
-    } else {
+      return;
+    }
+
+    if (stato.nomeLibero) {
       zonaCliente.innerHTML = `
-        <div class="ricerca-avvolgi">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-          <input class="input" id="cerca-cliente" type="search" placeholder="Scrivi le prime lettere del nome…" autocomplete="off" data-fuoco>
-        </div>
-        <div class="risultati-clienti" id="risultati"></div>
-      `;
-      const campo = zonaCliente.querySelector('#cerca-cliente');
-      const risultati = zonaCliente.querySelector('#risultati');
-
-      const cerca = async () => {
-        const trovate = await store.cercaClienti(campo.value, 25);
-        if (!trovate.length) {
-          risultati.innerHTML = campo.value.trim()
-            ? `<div style="padding:16px;text-align:center">
-                 <p class="testo-tenue" style="margin-bottom:10px">Nessuna cliente trovata</p>
-                 <button class="btn btn--principale btn--piccolo" id="crea-da-ricerca" type="button">Crea «${esc(campo.value.trim())}»</button>
-               </div>`
-            : '';
-          const crea = risultati.querySelector('#crea-da-ricerca');
-          if (crea) crea.addEventListener('click', () => nuovaClienteAlVolo(campo.value.trim()));
-          return;
-        }
-        risultati.innerHTML = trovate.map(c => `
-          <div class="riga-cliente" data-id="${esc(c.id)}">
-            <div class="pastiglia">${esc(iniziali(c.nome, c.cognome))}</div>
-            <div style="min-width:0">
-              <div class="riga-cliente__nome">${esc(nomeCompleto(c))}</div>
-              <div class="riga-cliente__dettaglio">${c.telefono ? esc(telefonoLeggibile(c.telefono)) : '—'}</div>
-            </div>
-          </div>`).join('');
-      };
-
-      campo.addEventListener('input', debounce(cerca, 120));
-      campo.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const prima = risultati.querySelector('.riga-cliente');
-          if (prima) prima.click();
-        }
+        <div class="cliente-scelto" style="background:var(--crema);border-color:var(--bordo)">
+          <div class="pastiglia" style="background:var(--crema-scura);color:var(--bruno-tenue)">?</div>
+          <div style="min-width:0;flex:1">
+            <div class="cliente-scelto__nome">${esc(stato.nomeLibero)}</div>
+            <div class="testo-tenue">senza scheda — la crei quando si presenta</div>
+          </div>
+          <button class="btn btn--fantasma btn--piccolo" id="cambia-cliente" type="button">Cambia</button>
+        </div>`;
+      zonaCliente.querySelector('#cambia-cliente').addEventListener('click', () => {
+        stato.nomeLibero = ''; disegnaCliente(); aggiorna();
       });
-      ui.su(risultati, 'click', '.riga-cliente', async (e, el) => {
-        stato.cliente = await store.leggiCliente(el.dataset.id);
+      return;
+    }
+
+    zonaCliente.innerHTML = `
+      <div class="ricerca-avvolgi">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input class="input" id="cerca-cliente" type="search" placeholder="Scrivi le prime lettere del nome…" autocomplete="off" data-fuoco>
+      </div>
+      <div class="risultati-clienti" id="risultati"></div>
+    `;
+    const campo = zonaCliente.querySelector('#cerca-cliente');
+    const risultati = zonaCliente.querySelector('#risultati');
+
+    const cerca = async () => {
+      const scritto = campo.value.trim();
+      const trovate = await store.cercaClienti(campo.value, 25);
+
+      if (!trovate.length) {
+        risultati.innerHTML = scritto
+          ? `<div style="padding:14px;text-align:center">
+               <p class="testo-tenue" style="margin-bottom:10px">Nessuna cliente con questo nome</p>
+               <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+                 <button class="btn btn--principale btn--piccolo" id="crea-da-ricerca" type="button">Crea la scheda</button>
+                 <button class="btn btn--fantasma btn--piccolo" id="solo-nome" type="button">Fissa solo con il nome</button>
+               </div>
+               <p class="campo__aiuto" style="margin-top:9px">«Fissa solo con il nome» va bene quando sei al telefono
+               e non hai tempo: la scheda si crea dopo, quando si presenta.</p>
+             </div>`
+          : '';
+        const crea = risultati.querySelector('#crea-da-ricerca');
+        if (crea) crea.addEventListener('click', () => nuovaClienteAlVolo(scritto));
+        const solo = risultati.querySelector('#solo-nome');
+        if (solo) solo.addEventListener('click', () => {
+          stato.nomeLibero = scritto;
+          disegnaCliente(); aggiorna();
+        });
+        return;
+      }
+
+      risultati.innerHTML = trovate.map(c => `
+        <div class="riga-cliente" data-id="${esc(c.id)}">
+          <div class="pastiglia">${esc(iniziali(c.nome, c.cognome))}</div>
+          <div style="min-width:0">
+            <div class="riga-cliente__nome">${esc(nomeCompleto(c))}</div>
+            <div class="riga-cliente__dettaglio">${c.telefono ? esc(telefonoLeggibile(c.telefono)) : '—'}${
+              c.serviziAbituali && c.serviziAbituali.length ? ' · ha i suoi soliti' : ''}</div>
+          </div>
+        </div>`).join('') + (scritto ? `
+        <div style="padding:9px 14px;border-top:1px solid var(--bordo-tenue)">
+          <button class="btn btn--fantasma btn--piccolo" id="solo-nome" type="button">Oppure fissa solo con «${esc(scritto)}»</button>
+        </div>` : '');
+
+      const solo = risultati.querySelector('#solo-nome');
+      if (solo) solo.addEventListener('click', () => {
+        stato.nomeLibero = scritto;
         disegnaCliente(); aggiorna();
       });
-      cerca();
-    }
+    };
+
+    campo.addEventListener('input', debounce(cerca, 120));
+    campo.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const prima = risultati.querySelector('.riga-cliente');
+        if (prima) prima.click();
+      }
+    });
+    ui.su(risultati, 'click', '.riga-cliente', async (e, el) => {
+      stato.cliente = await store.leggiCliente(el.dataset.id);
+      stato.nomeLibero = '';
+      await applicaTariffe();
+      disegnaCliente(); await disegnaServizi(); aggiorna(true);
+    });
+    cerca();
   }
 
   async function nuovaClienteAlVolo(nomeIniziale = '') {
@@ -3565,20 +4670,41 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
 
   function chip(s, colore) {
     const scelto = stato.servizi.some(x => x.id === s.id);
+    const t = store.tariffaPerCliente(stato.cliente, s);
     return `<button class="chip${scelto ? ' is-scelto' : ''}" data-servizio="${esc(s.id)}" type="button">
       <span class="chip__punto" style="background:${esc(colore)}"></span>
       ${esc(s.nome)}
-      <span class="chip__meta">${s.durata}′ · ${euro(s.prezzo, valuta)}</span>
+      <span class="chip__meta">${t.durata}′ · ${euro(t.prezzo, valuta)}${t.personalizzato ? ' ✱' : ''}</span>
     </button>`;
   }
 
-  function disegnaServizi() {
+  async function disegnaServizi() {
     const scorrimento = zonaServizi.scrollTop;   // non far saltare la lista sotto le dita
     const coloreDi = (id) => {
       const g = listino.gruppi.find(x => x.categoria.id === id);
       return g ? g.categoria.colore : '#9A8E80';
     };
+
     let html = '';
+
+    // I soliti di questa cliente: prima di tutto il resto, un tocco solo.
+    const abituali = await store.serviziAbitualiDi(stato.cliente);
+    if (abituali.length) {
+      const tuttiScelti = abituali.every(a => stato.servizi.some(x => x.id === a.id));
+      const durataTot = abituali.reduce((t, a) => t + a.durata, 0);
+      const prezzoTot = abituali.reduce((t, a) => t + a.prezzo, 0);
+      html += `<div class="gruppo-listino">
+        <div class="gruppo-listino__titolo">★ I soliti di ${esc(stato.cliente.nome)}</div>
+        <div class="chip-servizi">
+          <button class="chip${tuttiScelti ? ' is-scelto' : ''}" id="carica-soliti" type="button"
+                  style="border-color:var(--oro)">
+            ${tuttiScelti ? '✓ caricati' : 'Carica i soliti'}
+            <span class="chip__meta">${esc(abituali.map(a => a.nome).join(' + '))} · ${durataUmana(durataTot)} · ${euro(prezzoTot, valuta)}</span>
+          </button>
+        </div>
+      </div>`;
+    }
+
     if (listino.preferiti.length) {
       html += `<div class="gruppo-listino">
         <div class="gruppo-listino__titolo">★ Più usati</div>
@@ -3601,19 +4727,37 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
         testo: 'Aggiungi i servizi dalle impostazioni per poterli selezionare qui.'
       });
     }
+    if (stato.cliente && stato.cliente.prezzi && Object.keys(stato.cliente.prezzi).length) {
+      html += `<p class="campo__aiuto" style="margin-top:4px">✱ prezzo o durata personalizzati per ${esc(stato.cliente.nome)}</p>`;
+    }
+
     zonaServizi.innerHTML = html;
     zonaServizi.scrollTop = scorrimento;
+
+    const soliti = zonaServizi.querySelector('#carica-soliti');
+    if (soliti) soliti.addEventListener('click', async () => {
+      const abituali = await store.serviziAbitualiDi(stato.cliente);
+      const tuttiScelti = abituali.every(a => stato.servizi.some(x => x.id === a.id));
+      if (tuttiScelti) {
+        stato.servizi = stato.servizi.filter(x => !abituali.some(a => a.id === x.id));
+      } else {
+        for (const a of abituali) if (!stato.servizi.some(x => x.id === a.id)) stato.servizi.push(a);
+      }
+      stato.durataManuale = null; stato.prezzoManuale = null;
+      await disegnaServizi(); aggiorna(true);
+    });
   }
 
   ui.su(zonaServizi, 'click', '[data-servizio]', async (e, el) => {
     const id = el.dataset.servizio;
     const tutti = await store.elencoServizi();
-    const s = tutti.find(x => x.id === id);
-    if (!s) return;
+    const trovato = tutti.find(x => x.id === id);
+    if (!trovato) return;
     const i = stato.servizi.findIndex(x => x.id === id);
-    if (i >= 0) stato.servizi.splice(i, 1); else stato.servizi.push(s);
+    if (i >= 0) stato.servizi.splice(i, 1);
+    else stato.servizi.push(store.servizioPerCliente(stato.cliente, trovato));
     stato.durataManuale = null; stato.prezzoManuale = null;
-    disegnaServizi(); aggiorna(true);
+    await disegnaServizi(); aggiorna(true);
   });
 
   /* ---------------- 3. quando ---------------- */
@@ -3658,7 +4802,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
 
   async function disegnaOrari() {
     const d = durata();
-    const slot = await store.orariLiberi(stato.data, d, { escludiId: appuntamento ? appuntamento.id : null });
+    const slot = await store.orariLiberi(stato.data, d, { escludiId: appuntamento ? appuntamento.id : null, servizi: serviziOrdinati() });
     const scelotFuoriFascia = stato.ora && !slot.some(s => s.ora === stato.ora);
 
     if (!slot.length) {
@@ -3722,7 +4866,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     if (modo === 'off') return;
 
     const inizio = `${dayKey(stato.data)}T${stato.ora}`;
-    const c = await store.verificaConflitti(inizio, durata(), { escludiId: appuntamento ? appuntamento.id : null });
+    const c = await store.verificaConflitti(inizio, durata(), { escludiId: appuntamento ? appuntamento.id : null, servizi: serviziOrdinati() });
 
     if (c.attivi.length) {
       const nomi = [];
@@ -3767,28 +4911,30 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     await aggiornaAvvisi();
     aggiornaExtra();
 
-    const pronto = !!(stato.cliente && stato.ora);
+    const chi = stato.cliente ? nomeCompleto(stato.cliente) : stato.nomeLibero;
+    const pronto = !!(chi && stato.ora);
     btnSalva.disabled = !pronto;
     riepilogo.innerHTML = pronto
-      ? `<strong style="color:var(--bruno);font-size:15px">${esc(nomeCompleto(stato.cliente))}</strong> ·
+      ? `<strong style="color:var(--bruno);font-size:15px">${esc(chi)}</strong> ·
          ${esc(dataEstesa(stato.data).toLowerCase())} alle ${esc(stato.ora)} ·
          ${durataUmana(durata())} · ${euro(prezzo(), valuta)}`
-      : (!stato.cliente ? 'Scegli la cliente per continuare' : 'Scegli un orario');
+      : (!chi ? 'Scegli la cliente per continuare' : 'Scegli un orario');
   }
 
   btnSalva.addEventListener('click', async () => {
-    if (!stato.cliente || !stato.ora) return;
+    if ((!stato.cliente && !stato.nomeLibero) || !stato.ora) return;
     btnSalva.disabled = true;
     const salvato = await store.salvaAppuntamento({
       id: appuntamento ? appuntamento.id : undefined,
-      clienteId: stato.cliente.id,
+      clienteId: stato.cliente ? stato.cliente.id : null,
+      clienteNome: stato.cliente ? null : stato.nomeLibero,
+      serieId: appuntamento ? appuntamento.serieId : null,
+      dataSerie: appuntamento ? appuntamento.dataSerie : null,
       inizio: `${dayKey(stato.data)}T${stato.ora}`,
       durata: durata(),
       posaMinuti: posa(),
       prezzo: prezzo(),
-      servizi: stato.servizi.map(s => ({
-        servizioId: s.id, nome: s.nome, durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti || 0
-      })),
+      servizi: serviziOrdinati(),
       note: stato.note,
       stato: appuntamento ? appuntamento.stato : 'previsto',
       confermaInviata: appuntamento ? appuntamento.confermaInviata : null,
@@ -3797,12 +4943,13 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     });
     p.chiudi();
     if (modifica) ui.ok('Appuntamento aggiornato');
-    else setTimeout(() => proponiConferma(salvato, stato.cliente), 240);
+    else if (stato.cliente) setTimeout(() => proponiConferma(salvato, stato.cliente), 240);
+    else ui.ok(`Appuntamento fissato per ${stato.nomeLibero}`);
   });
 
   /* ---------------- avvio ---------------- */
   disegnaCliente();
-  disegnaServizi();
+  await disegnaServizi();
   disegnaGiorni();
   await disegnaOrari();
   await aggiorna();
@@ -3883,8 +5030,9 @@ function inizializza() {
 async function invia(appuntamentoId) {
   const a = await store.leggiAppuntamento(appuntamentoId);
   if (!a) return;
-  const cliente = await store.leggiCliente(a.clienteId);
-  if (!cliente || !cliente.telefono) { ui.errore('Manca il numero di telefono'); return; }
+  const cliente = a.clienteId ? await store.leggiCliente(a.clienteId) : null;
+  if (!cliente) { ui.errore('Questa cliente non ha ancora una scheda: creala dall\'appuntamento in agenda'); return; }
+  if (!cliente.telefono) { ui.errore('Manca il numero di telefono'); return; }
   const testo = wa.testoPromemoria(cliente, a);
   if (wa.apri(cliente, testo)) {
     await store.segnaMessaggioInviato(appuntamentoId, 'promemoria');
@@ -3903,7 +5051,10 @@ async function disegna() {
 
   for (const a of appuntamenti) {
     const c = a.cliente;
-    if (!c) continue;
+    if (!c) {
+      if (a.clienteNome) esclusi.push({ a, c: { nome: a.clienteNome, cognome: '' }, motivo: 'non ha ancora una scheda' });
+      continue;
+    }
     if (!c.promemoriaAttivo) { esclusi.push({ a, c, motivo: 'promemoria disattivato nella sua scheda' }); continue; }
     if (!c.telefono) { esclusi.push({ a, c, motivo: 'manca il numero di telefono' }); continue; }
     (a.promemoriaInviato ? gia : daInviare).push({ a, c });
@@ -4015,7 +5166,7 @@ const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.1.1';
+const VERSIONE_APP = '1.2.0';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
@@ -5026,6 +6177,7 @@ const db = MOD.db;
 const cfg = MOD.cfgApp;
 const ui = MOD.ui;
 const ponte = MOD.ponte;
+const store = MOD.store;
 const agenda = MOD.vAgenda;
 const clienti = MOD.vClienti;
 const nuovo = MOD.vNuovo;
@@ -5057,6 +6209,12 @@ async function avvia() {
 
     document.querySelectorAll('.nav__voce').forEach(b =>
       b.addEventListener('click', () => vaiA(b.dataset.vista)));
+
+    // L'orizzonte degli appuntamenti fissi si sposta in avanti da solo:
+    // così non finiscono mai e l'agenda lontana non si intasa.
+    store.rigeneraTutteLeSerie()
+      .then(esito => { if (esito.create) console.info(`[Charme] ${esito.create} appuntamenti fissi generati`); })
+      .catch(e => console.warn('[Charme] generazione appuntamenti fissi non riuscita', e));
 
     await agenda.disegna();
     await promemoria.aggiornaPallino();
