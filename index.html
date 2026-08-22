@@ -885,6 +885,60 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .agenda__testate { margin-left: 52px; }
 }
 
+/* =============================================================================
+   NUOVO APPUNTAMENTO — versione larga
+   Il passo 1 sta in una riga sola e i risultati della ricerca galleggiano
+   sopra il resto: lo spazio guadagnato va tutto ai servizi, che sono la cosa
+   che si tocca di più e che prima si vedeva tre alla volta.
+   ========================================================================== */
+
+.pannello--extra { width: min(1180px, 100%); }
+
+.rapido--v2 { grid-template-columns: 1fr; }
+@media (min-width: 900px) {
+  .pannello--extra .rapido--v2 { grid-template-columns: 1.18fr 1fr; }
+  .pannello--extra .rapido--v2 .rapido__col--destra { padding-left: 26px; }
+  .pannello--extra #zona-servizi { max-height: 46vh; }
+}
+
+/* passo 1 — una riga sola */
+.passo--compatto { margin-bottom: 18px; }
+.zona-cliente { position: relative; }
+.riga-cliente-compatta { display: flex; gap: 10px; align-items: center; }
+.riga-cliente-compatta .ricerca-avvolgi { flex: 1; min-width: 0; }
+.risultati-clienti--sovrapposti {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5;
+  background: var(--superficie); box-shadow: var(--ombra-m);
+  max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--bordo); border-radius: var(--raggio-s);
+}
+.cliente-scelto--riga { padding: 9px 12px; }
+.cliente-scelto--riga .pastiglia { width: 38px; height: 38px; font-size: 14px; }
+.cliente-scelto--riga .cliente-scelto__nome { font-size: 15.5px; }
+.cliente-scelto__coda { font-weight: 500; font-size: 13px; color: var(--bruno-tenue); }
+
+/* passo 2 — ricerca dei servizi e pulsanti più grandi */
+.servizi-testa { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.servizi-testa .ricerca-avvolgi { flex: 1; }
+.servizi-testa .input { min-height: 44px; font-size: 15px; }
+.chip--grande {
+  min-height: 56px; padding: 7px 15px;
+  flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px; border-radius: 14px; font-size: 15.5px; line-height: 1.2;
+}
+.chip__riga { display: flex; align-items: center; gap: 7px; }
+.chip--grande .chip__meta { font-size: 12.5px; padding-left: 16px; }
+
+/* le righe ancora da fare non si confondono con quelle già passate */
+.linea-storico--futura {
+  background: var(--oro-tenue);
+  border-left: 3px solid var(--oro);
+  padding-left: 12px;
+  border-radius: var(--raggio-s);
+  margin-bottom: 4px;
+}
+.linea-storico--futura .linea-storico__data { color: var(--oro-scuro); font-weight: 600; }
+
 </style>
 </head>
 <body>
@@ -1682,6 +1736,12 @@ const PREDEFINITE = {
     /* Ferie e chiusure straordinarie: [{ da, a, motivo }] */
     chiusure: [],
 
+    /* Aperture extra: giornate singole con orari propri, per i prefestivi
+       e per i giorni in più sotto le feste. Vincono su ferie e chiusure e
+       sulla tabella settimanale, perché sono la regola più specifica.
+       [{ giorno, apertura, chiusura, pausaDa, pausaA, motivo }] */
+    aperture: [],
+
     avvisoFuoriOrario: true,
     vistaGiorni: 1,              // quanti giorni affiancare in agenda
     soloGiorniLavorativi: true,  // nella vista su più giorni salta i giorni di chiusura
@@ -1954,7 +2014,7 @@ const pila = [];
  * Apre un pannello dal basso.
  * @returns {{chiudi:Function, elemento:HTMLElement, corpo:HTMLElement}}
  */
-function pannello({ titolo, sottotitolo = '', contenuto, azioni = '', ampio = false, alChiudere = null }) {
+function pannello({ titolo, sottotitolo = '', contenuto, azioni = '', ampio = false, classe = '', alChiudere = null }) {
   const livello = pila.length;
   const zSfondo = 60 + livello * 10;
 
@@ -1963,7 +2023,7 @@ function pannello({ titolo, sottotitolo = '', contenuto, azioni = '', ampio = fa
   sfondo.style.zIndex = zSfondo;
 
   const el = document.createElement('div');
-  el.className = `pannello${ampio ? ' pannello--ampio' : ''}`;
+  el.className = `pannello${ampio ? ' pannello--ampio' : ''}${classe ? ' ' + classe : ''}`;
   el.style.zIndex = zSfondo + 1;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-modal', 'true');
@@ -2475,6 +2535,25 @@ async function salvaAppuntamento(dati) {
   return app;
 }
 
+/**
+ * A giornata finita un appuntamento non è più "previsto": o è stato spostato,
+ * o annullato, o si è svolto. Quelli rimasti previsti su un giorno ormai
+ * passato diventano conclusi da soli all'avvio, senza chiedere niente.
+ * Vale anche per l'arretrato: la prima volta sistema tutto quello che trova.
+ * Non tocca annullati, assenti e già conclusi, e non tocca la giornata di oggi.
+ */
+async function concludiGiorniPassati() {
+  const oggi = dayKey(new Date());
+  const tutti = await db.leggiTutti('appuntamenti');
+  const daChiudere = tutti.filter(a => a.stato === 'previsto' && a.giorno && a.giorno < oggi);
+  if (!daChiudere.length) return 0;
+
+  const adesso = new Date().toISOString();
+  await db.salvaMolti('appuntamenti',
+    daChiudere.map(a => ({ ...a, stato: 'concluso', modificatoIl: adesso })));
+  return daChiudere.length;
+}
+
 /** Il nome da mostrare, che la cliente abbia una scheda oppure no. */
 function nomeDiAppuntamento(appuntamento, cliente) {
   if (cliente) return nomeCompleto(cliente);
@@ -2806,6 +2885,36 @@ async function serviziAbitualiDi(cliente) {
     .map(s => servizioPerCliente(cliente, s));
 }
 
+/**
+ * I servizi da proporre a colpo sicuro quando si fissa un appuntamento.
+ * Prima quelli scelti a mano dall'ingranaggio; se non ce ne sono — ed è il
+ * caso di quasi tutte — quelli dell'ultima volta che è venuta. Prima questa
+ * seconda strada non c'era: chi non aveva i "soliti" impostati non si vedeva
+ * proporre niente, e ogni appuntamento andava ricomposto servizio per servizio.
+ */
+async function serviziProposti(cliente) {
+  if (!cliente || !cliente.id) return null;
+
+  const abituali = await serviziAbitualiDi(cliente);
+  if (abituali.length) return { origine: 'abituali', servizi: abituali, quando: null };
+
+  const storia = await storicoCliente(cliente.id);
+  const ultima = storia.passati.find(a => a.stato !== 'assente' && (a.servizi || []).length);
+  if (!ultima) return null;
+
+  // Servizi di allora, prezzi e durate di oggi.
+  const tutti = await elencoServizi();
+  const servizi = (ultima.servizi || []).map(s => {
+    const attuale = tutti.find(x => x.id === s.servizioId);
+    return attuale
+      ? servizioPerCliente(cliente, attuale)
+      : { id: s.servizioId, nome: s.nome, durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti || 0 };
+  }).filter(s => s.id);
+
+  if (!servizi.length) return null;
+  return { origine: 'ultima', servizi, quando: daIsoLocale(ultima.inizio) };
+}
+
 /** Salva le impostazioni che stanno dietro l'ingranaggio della scheda. */
 async function salvaImpostazioniCliente(clienteId, modifiche) {
   const c = await leggiCliente(clienteId);
@@ -3011,14 +3120,57 @@ function settimanaTipica(apertura = '09:00', chiusura = '19:00') {
   }));
 }
 
-/** La chiusura straordinaria che copre quel giorno, se c'è. */
+/**
+ * L'apertura extra fissata su quel giorno, se c'è.
+ * È la regola più specifica di tutte — riguarda un giorno solo — e per questo
+ * vince su tutto il resto: sulle ferie e sulla tabella settimanale.
+ * Serve per i prefestivi e per i giorni in più sotto le feste.
+ */
+function aperturaDi(data) {
+  const g = typeof data === 'string' ? data : dayKey(data);
+  for (const a of (cfg.get('agenda').aperture || [])) {
+    if (a && a.giorno === g) return a;
+  }
+  return null;
+}
+
+/**
+ * La chiusura straordinaria che copre quel giorno, se c'è.
+ * Un'apertura extra su quel giorno la annulla: è la regola più specifica.
+ */
 function chiusuraDi(data) {
+  const g = typeof data === 'string' ? data : dayKey(data);
+  if (aperturaDi(g)) return null;
+  for (const c of (cfg.get('agenda').chiusure || [])) {
+    if (!c || !c.da) continue;
+    if (g >= c.da && g <= (c.a || c.da)) return c;
+  }
+  return null;
+}
+
+/** La chiusura scritta nell'elenco, apertura extra o no: serve alle impostazioni. */
+function chiusuraScrittaDi(data) {
   const g = typeof data === 'string' ? data : dayKey(data);
   for (const c of (cfg.get('agenda').chiusure || [])) {
     if (!c || !c.da) continue;
     if (g >= c.da && g <= (c.a || c.da)) return c;
   }
   return null;
+}
+
+/** Le fasce di una singola giornata descritta da orari propri. */
+function fasceDaOrari(o) {
+  if (!o) return [];
+  const apertura = minutiDaHHMM(o.apertura);
+  const chiusura = minutiDaHHMM(o.chiusura);
+  if (!(chiusura > apertura)) return [];
+  if (o.pausaDa && o.pausaA && minutiDaHHMM(o.pausaA) > minutiDaHHMM(o.pausaDa)) {
+    return [
+      { da: apertura, a: minutiDaHHMM(o.pausaDa) },
+      { da: minutiDaHHMM(o.pausaA), a: chiusura }
+    ].filter(f => f.a > f.da);
+  }
+  return [{ da: apertura, a: chiusura }];
 }
 
 /**
@@ -3028,6 +3180,11 @@ function chiusuraDi(data) {
 function fasceDelGiorno(data) {
   const a = cfg.get('agenda');
   const g = typeof data === 'string' ? data : dayKey(data);
+
+  // Prima di tutto il resto: un'apertura extra decide da sola quella giornata.
+  const extra = aperturaDi(g);
+  if (extra) return fasceDaOrari(extra);
+
   if (chiusuraDi(g)) return [];
 
   if (!Array.isArray(a.settimana) || a.settimana.length !== 7) {
@@ -3035,16 +3192,7 @@ function fasceDelGiorno(data) {
   }
   const giorno = a.settimana[fromDayKey(g).getDay()];
   if (!giorno || !giorno.aperto) return [];
-
-  const apertura = minutiDaHHMM(giorno.apertura);
-  const chiusura = minutiDaHHMM(giorno.chiusura);
-  if (giorno.pausaDa && giorno.pausaA && minutiDaHHMM(giorno.pausaA) > minutiDaHHMM(giorno.pausaDa)) {
-    return [
-      { da: apertura, a: minutiDaHHMM(giorno.pausaDa) },
-      { da: minutiDaHHMM(giorno.pausaA), a: chiusura }
-    ].filter(f => f.a > f.da);
-  }
-  return apertura < chiusura ? [{ da: apertura, a: chiusura }] : [];
+  return fasceDaOrari(giorno);
 }
 
 function giornoAperto(data) { return fasceDelGiorno(data).length > 0; }
@@ -3063,10 +3211,17 @@ function estremiGriglia() {
     if (aperti.length) {
       da = Math.min(...aperti.map(g => minutiDaHHMM(g.apertura)));
       fine = Math.max(...aperti.map(g => minutiDaHHMM(g.chiusura)));
-      da = Math.max(0, da - 30);              // mezz'ora di margine per gli sconfinamenti
-      fine = Math.min(24 * 60, fine + 30);
     }
   }
+  // Un prefestivo che apre prima o chiude più tardi non deve finire
+  // fuori dalla griglia: la fascia disegnata li comprende tutti.
+  for (const e of (a.aperture || [])) {
+    if (!e || !e.apertura || !e.chiusura) continue;
+    da = Math.min(da, minutiDaHHMM(e.apertura));
+    fine = Math.max(fine, minutiDaHHMM(e.chiusura));
+  }
+  da = Math.max(0, da - 30);                  // mezz'ora di margine per gli sconfinamenti
+  fine = Math.min(24 * 60, fine + 30);
   return { da, a: fine };
 }
 
@@ -3095,7 +3250,7 @@ function fuoriOrario(inizioIso, durata) {
   return { motivo: `l'orario di quel giorno è ${fasce.map(f => `${hhmmDaMinuti(f.da)}–${hhmmDaMinuti(f.a)}`).join(' e ')}` };
 }
 
-return { NOMI_GIORNI, ORIZZONTE_GIORNI, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, chiusuraDi, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, estremiGriglia, fasceDelGiorno, fermaSerie, finestreAttesa, finestreLavoro, fuoriOrario, generaOccorrenze, giornataCompleta, giornoAperto, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariConfigurati, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, servizioPerCliente, settimanaTipica, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
+return { NOMI_GIORNI, ORIZZONTE_GIORNI, aperturaDi, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, chiusuraDi, chiusuraScrittaDi, concludiGiorniPassati, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, estremiGriglia, fasceDelGiorno, fermaSerie, finestreAttesa, finestreLavoro, fuoriOrario, generaOccorrenze, giornataCompleta, giornoAperto, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariConfigurati, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, serviziProposti, servizioPerCliente, settimanaTipica, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
 })();
 
 /* ======================= js/ponte.js ======================= */
@@ -3241,6 +3396,8 @@ async function costruisciPacchetto() {
     // Senza questi Claude proporrebbe orari a saracinesca abbassata.
     settimana: agendaCfg.settimana || null,
     chiusure: agendaCfg.chiusure || [],
+    // Le aperture extra vincono su tutto: il telefono deve saperlo anche lui.
+    aperture: agendaCfg.aperture || [],
     periodo: { da: daGiorno, a: aGiorno },
     agenda,
     clienti: elencoClienti,
@@ -4331,7 +4488,7 @@ const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
-const { esc, iniziali, nomeCompleto, telefonoLeggibile, tempoFa, euro, durataUmana, dataBreve, dataEstesa, daIsoLocale, ora: oraDi, debounce, normalizza, dayKey, fromDayKey, addDays } = MOD.util;
+const { esc, iniziali, nomeCompleto, telefonoLeggibile, tempoFa, euro, durataUmana, dataBreve, dataEstesa, daIsoLocale, isoLocale, ora: oraDi, debounce, normalizza, dayKey, fromDayKey, addDays } = MOD.util;
 
 let apriNuovoAppuntamento = null;
 let filtro = '';
@@ -4441,7 +4598,7 @@ async function scheda(id) {
   const prossimi = s.futuri.length
     ? s.futuri.map(a => {
         const d = daIsoLocale(a.inizio);
-        return `<div class="linea-storico linea-storico--tocca" data-visita="${esc(a.id)}">
+        return `<div class="linea-storico linea-storico--tocca linea-storico--futura" data-visita="${esc(a.id)}">
           <div class="linea-storico__data">${esc(dataBreve(d))}<br><span style="opacity:.65">${esc(oraDi(d))}</span></div>
           <div class="linea-storico__corpo">
             <div class="linea-storico__servizi">${esc((a.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento')}${a.serieId ? ' ↻' : ''}</div>
@@ -4487,9 +4644,12 @@ async function scheda(id) {
         <div class="blocco__titolo" style="font-size:15px;margin-bottom:6px">Note</div>
         <p class="testo-lungo" style="font-size:14.5px">${esc(c.note)}</p></div>` : ''}
 
-      ${prossimi ? `<h3 style="font-size:16px;margin:18px 0 4px">Prossimi appuntamenti</h3>${prossimi}` : ''}
+      ${prossimi ? `<h3 style="font-size:16px;margin:18px 0 4px">Prossimi appuntamenti
+        <span class="testo-tenue" style="font-family:var(--sans);font-size:12.5px;font-weight:500">· ancora da fare</span></h3>
+        <p class="testo-tenue" style="margin-bottom:2px">Tocca una riga per aprirla o spostarla.</p>${prossimi}` : ''}
 
-      <h3 style="font-size:16px;margin:20px 0 4px">Storico</h3>
+      <h3 style="font-size:16px;margin:24px 0 4px">Storico
+        <span class="testo-tenue" style="font-family:var(--sans);font-size:12.5px;font-weight:500">· già fatti</span></h3>
       <p class="testo-tenue" style="margin-bottom:2px">Tocca una riga per annotare com'è andata o per rifissare gli stessi servizi.</p>
       ${storico}
     `,
@@ -4619,7 +4779,10 @@ function modulo(cliente = null) {
 function pannelloVisita(appuntamento, cliente, alChiudere) {
   const valuta = cfg.get('incassi').valuta;
   const d = daIsoLocale(appuntamento.inizio);
-  const passato = appuntamento.inizio < new Date().toISOString().slice(0, 16);
+  // Confronto fra due orari locali: toISOString() avrebbe dato l'ora di
+  // Greenwich, due ore indietro d'estate, e per due ore un appuntamento
+  // appena passato sarebbe sembrato ancora da fare.
+  const passato = appuntamento.inizio < isoLocale(new Date());
   const servizi = (appuntamento.servizi || []).map(x => x.nome).join(', ') || 'Appuntamento';
 
   const p = ui.pannello({
@@ -4989,7 +5152,7 @@ const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
-const { esc, dayKey, fromDayKey, addDays, dataEstesa, GIORNI_BREVI, MESI_BREVI, euro, durataUmana, nomeCompleto, iniziali, tempoFa, telefonoLeggibile, debounce, isToday, daIsoLocale, ora: oraDi } = MOD.util;
+const { esc, dayKey, fromDayKey, addDays, dataEstesa, dataBreve, GIORNI_BREVI, MESI_BREVI, euro, durataUmana, nomeCompleto, iniziali, tempoFa, telefonoLeggibile, debounce, isToday, daIsoLocale, normalizza, ora: oraDi } = MOD.util;
 
 let listino = null;   // caricato una volta e riusato
 
@@ -5006,6 +5169,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     ora: appuntamento ? appuntamento.inizio.slice(11) : oraSuggerita,
     durataManuale: null,
     prezzoManuale: null,
+    filtroServizi: '',
     note: appuntamento ? appuntamento.note : ''
   };
 
@@ -5036,6 +5200,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   const p = ui.pannello({
     titolo: modifica ? 'Modifica appuntamento' : 'Nuovo appuntamento',
     ampio: true,
+    classe: 'pannello--extra',
     contenuto: '<div id="rapido"></div>',
     azioni: `
       <div id="riepilogo-rapido" style="margin-right:auto;font-size:13.5px;color:var(--bruno-tenue)"></div>
@@ -5065,20 +5230,24 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   /* ---------------- struttura ---------------- */
 
   radice.innerHTML = `
-   <div class="rapido">
+   <div class="rapido rapido--v2">
     <div class="rapido__col rapido__col--sinistra">
-    <!-- 1. cliente -->
-    <div class="passo">
-      <div class="passo__titolo"><span class="passo__numero">1</span> Cliente
-        <button class="btn btn--fantasma btn--piccolo passo__coda" id="btn-nuova-al-volo" type="button">+ Nuova cliente</button>
-      </div>
-      <div id="zona-cliente"></div>
+    <!-- 1. cliente: una riga sola, i risultati compaiono solo mentre scrive -->
+    <div class="passo passo--compatto">
+      <div class="passo__titolo"><span class="passo__numero">1</span> Cliente</div>
+      <div class="zona-cliente" id="zona-cliente"></div>
     </div>
 
     <!-- 2. servizi -->
     <div class="passo">
       <div class="passo__titolo"><span class="passo__numero">2</span> Servizi
         <span class="passo__coda testo-tenue" id="etichetta-servizi"></span>
+      </div>
+      <div class="servizi-testa">
+        <div class="ricerca-avvolgi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input class="input" id="cerca-servizio" type="search" placeholder="Cerca un servizio…" autocomplete="off">
+        </div>
       </div>
       <div id="zona-servizi"></div>
     </div>
@@ -5138,15 +5307,18 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     });
   }
 
+  /* Una riga sola. Chi è già scelta sta in una striscia bassa; chi non lo è
+     ancora ha solo il campo di ricerca, e i risultati compaiono sopra il
+     resto mentre scrive, senza spostare di un pixel quello che c'è sotto. */
   function disegnaCliente() {
     if (stato.cliente) {
       const c = stato.cliente;
       zonaCliente.innerHTML = `
-        <div class="cliente-scelto">
+        <div class="cliente-scelto cliente-scelto--riga">
           <div class="pastiglia">${esc(iniziali(c.nome, c.cognome))}</div>
           <div style="min-width:0;flex:1">
-            <div class="cliente-scelto__nome">${esc(nomeCompleto(c))}</div>
-            <div class="testo-tenue">${c.telefono ? esc(telefonoLeggibile(c.telefono)) : 'nessun numero di telefono'}</div>
+            <div class="cliente-scelto__nome">${esc(nomeCompleto(c))}${
+              c.telefono ? ` <span class="cliente-scelto__coda">· ${esc(telefonoLeggibile(c.telefono))}</span>` : ''}</div>
           </div>
           <button class="btn btn--fantasma btn--piccolo" id="cambia-cliente" type="button">Cambia</button>
         </div>
@@ -5161,11 +5333,11 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
 
     if (stato.nomeLibero) {
       zonaCliente.innerHTML = `
-        <div class="cliente-scelto" style="background:var(--crema);border-color:var(--bordo)">
+        <div class="cliente-scelto cliente-scelto--riga" style="background:var(--crema);border-color:var(--bordo)">
           <div class="pastiglia" style="background:var(--crema-scura);color:var(--bruno-tenue)">?</div>
           <div style="min-width:0;flex:1">
-            <div class="cliente-scelto__nome">${esc(stato.nomeLibero)}</div>
-            <div class="testo-tenue">senza scheda — la crei quando si presenta</div>
+            <div class="cliente-scelto__nome">${esc(stato.nomeLibero)}
+              <span class="cliente-scelto__coda">· senza scheda, la crei quando si presenta</span></div>
           </div>
           <button class="btn btn--fantasma btn--piccolo" id="cambia-cliente" type="button">Cambia</button>
         </div>`;
@@ -5176,22 +5348,31 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     }
 
     zonaCliente.innerHTML = `
-      <div class="ricerca-avvolgi">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input class="input" id="cerca-cliente" type="search" placeholder="Scrivi le prime lettere del nome…" autocomplete="off" data-fuoco>
+      <div class="riga-cliente-compatta">
+        <div class="ricerca-avvolgi">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input class="input" id="cerca-cliente" type="search" placeholder="Scrivi le prime lettere del nome…" autocomplete="off" data-fuoco>
+        </div>
+        <button class="btn btn--fantasma btn--piccolo" id="btn-nuova-al-volo" type="button">+ Nuova</button>
       </div>
-      <div class="risultati-clienti" id="risultati"></div>
+      <div class="risultati-clienti risultati-clienti--sovrapposti" id="risultati"></div>
     `;
     const campo = zonaCliente.querySelector('#cerca-cliente');
     const risultati = zonaCliente.querySelector('#risultati');
+    zonaCliente.querySelector('#btn-nuova-al-volo')
+      .addEventListener('click', () => nuovaClienteAlVolo(campo.value.trim()));
 
     const cerca = async () => {
       const scritto = campo.value.trim();
-      const trovate = await store.cercaClienti(campo.value, 25);
+
+      // A campo vuoto non si mostra niente: l'elenco completo non serve a
+      // nessuno e coprirebbe i servizi appena aperto il pannello.
+      if (!scritto) { risultati.innerHTML = ''; return; }
+
+      const trovate = await store.cercaClienti(scritto, 25);
 
       if (!trovate.length) {
-        risultati.innerHTML = scritto
-          ? `<div style="padding:14px;text-align:center">
+        risultati.innerHTML = `<div style="padding:14px;text-align:center">
                <p class="testo-tenue" style="margin-bottom:10px">Nessuna cliente con questo nome</p>
                <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
                  <button class="btn btn--principale btn--piccolo" id="crea-da-ricerca" type="button">Crea la scheda</button>
@@ -5199,8 +5380,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
                </div>
                <p class="campo__aiuto" style="margin-top:9px">«Fissa solo con il nome» va bene quando sei al telefono
                e non hai tempo: la scheda si crea dopo, quando si presenta.</p>
-             </div>`
-          : '';
+             </div>`;
         const crea = risultati.querySelector('#crea-da-ricerca');
         if (crea) crea.addEventListener('click', () => nuovaClienteAlVolo(scritto));
         const solo = risultati.querySelector('#solo-nome');
@@ -5219,10 +5399,10 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
             <div class="riga-cliente__dettaglio">${c.telefono ? esc(telefonoLeggibile(c.telefono)) : '—'}${
               c.serviziAbituali && c.serviziAbituali.length ? ' · ha i suoi soliti' : ''}</div>
           </div>
-        </div>`).join('') + (scritto ? `
+        </div>`).join('') + `
         <div style="padding:9px 14px;border-top:1px solid var(--bordo-tenue)">
           <button class="btn btn--fantasma btn--piccolo" id="solo-nome" type="button">Oppure fissa solo con «${esc(scritto)}»</button>
-        </div>` : '');
+        </div>`;
 
       const solo = risultati.querySelector('#solo-nome');
       if (solo) solo.addEventListener('click', () => {
@@ -5237,6 +5417,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
         const prima = risultati.querySelector('.riga-cliente');
         if (prima) prima.click();
       }
+      if (e.key === 'Escape' && campo.value) { campo.value = ''; risultati.innerHTML = ''; }
     });
     ui.su(risultati, 'click', '.riga-cliente', async (e, el) => {
       stato.cliente = await store.leggiCliente(el.dataset.id);
@@ -5244,7 +5425,6 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
       await applicaTariffe();
       disegnaCliente(); await disegnaServizi(); aggiorna(true);
     });
-    cerca();
   }
 
   async function nuovaClienteAlVolo(nomeIniziale = '') {
@@ -5305,8 +5485,6 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     });
   }
 
-  radice.querySelector('#btn-nuova-al-volo').addEventListener('click', () => nuovaClienteAlVolo());
-
   /* ---------------- 2. servizi ---------------- */
 
   const zonaServizi = radice.querySelector('#zona-servizi');
@@ -5314,9 +5492,8 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   function chip(s, colore) {
     const scelto = stato.servizi.some(x => x.id === s.id);
     const t = store.tariffaPerCliente(stato.cliente, s);
-    return `<button class="chip${scelto ? ' is-scelto' : ''}" data-servizio="${esc(s.id)}" type="button">
-      <span class="chip__punto" style="background:${esc(colore)}"></span>
-      ${esc(s.nome)}
+    return `<button class="chip chip--grande${scelto ? ' is-scelto' : ''}" data-servizio="${esc(s.id)}" type="button">
+      <span class="chip__riga"><span class="chip__punto" style="background:${esc(colore)}"></span>${esc(s.nome)}</span>
       <span class="chip__meta">${t.durata}′ · ${euro(t.prezzo, valuta)}${t.personalizzato ? ' ✱' : ''}</span>
     </button>`;
   }
@@ -5329,49 +5506,82 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     };
 
     let html = '';
+    const filtro = normalizza(stato.filtroServizi || '');
 
-    // I soliti di questa cliente: prima di tutto il resto, un tocco solo.
-    const abituali = await store.serviziAbitualiDi(stato.cliente);
-    if (abituali.length) {
-      const tuttiScelti = abituali.every(a => stato.servizi.some(x => x.id === a.id));
-      const durataTot = abituali.reduce((t, a) => t + a.durata, 0);
-      const prezzoTot = abituali.reduce((t, a) => t + a.prezzo, 0);
-      html += `<div class="gruppo-listino">
-        <div class="gruppo-listino__titolo">★ I soliti di ${esc(stato.cliente.nome)}</div>
-        <div class="chip-servizi">
-          <button class="chip${tuttiScelti ? ' is-scelto' : ''}" id="carica-soliti" type="button"
-                  style="border-color:var(--oro)">
-            ${tuttiScelti ? '✓ caricati' : 'Carica i soliti'}
-            <span class="chip__meta">${esc(abituali.map(a => a.nome).join(' + '))} · ${durataUmana(durataTot)} · ${euro(prezzoTot, valuta)}</span>
-          </button>
-        </div>
-      </div>`;
-    }
+    if (filtro) {
+      /* Con la ricerca attiva il listino sparisce e restano i soli servizi
+         che corrispondono. Quelli già scelti che la ricerca esclude non si
+         perdono di vista: si raccolgono sotto, sempre togliibili con un tocco. */
+      const tutti = [];
+      for (const g of listino.gruppi) {
+        for (const srv of g.servizi) tutti.push({ srv, colore: g.categoria.colore });
+      }
+      const trovati = tutti.filter(x => normalizza(x.srv.nome).includes(filtro));
 
-    if (listino.preferiti.length) {
       html += `<div class="gruppo-listino">
-        <div class="gruppo-listino__titolo">★ Più usati</div>
-        <div class="chip-servizi">${listino.preferiti.map(s => chip(s, coloreDi(s.categoriaId))).join('')}</div>
+        <div class="gruppo-listino__titolo">Risultati per «${esc(stato.filtroServizi.trim())}»</div>
+        ${trovati.length
+          ? `<div class="chip-servizi">${trovati.map(x => chip(x.srv, x.colore)).join('')}</div>`
+          : '<p class="testo-tenue" style="padding:4px 0">Nessun servizio con questo nome.</p>'}
       </div>`;
-    }
-    for (const g of listino.gruppi) {
-      const restanti = g.servizi.filter(s => !s.preferito);
-      if (!restanti.length) continue;
-      html += `<div class="gruppo-listino">
-        <div class="gruppo-listino__titolo">
-          <span class="punto-colore" style="background:${esc(g.categoria.colore)}"></span>${esc(g.categoria.nome)}
-        </div>
-        <div class="chip-servizi">${restanti.map(s => chip(s, g.categoria.colore)).join('')}</div>
-      </div>`;
-    }
-    if (!html) {
-      html = ui.statoVuoto({
-        titolo: 'Il listino è vuoto',
-        testo: 'Aggiungi i servizi dalle impostazioni per poterli selezionare qui.'
-      });
-    }
-    if (stato.cliente && stato.cliente.prezzi && Object.keys(stato.cliente.prezzi).length) {
-      html += `<p class="campo__aiuto" style="margin-top:4px">✱ prezzo o durata personalizzati per ${esc(stato.cliente.nome)}</p>`;
+
+      const fuori = stato.servizi.filter(x => !normalizza(x.nome).includes(filtro));
+      if (fuori.length) {
+        html += `<div class="gruppo-listino">
+          <div class="gruppo-listino__titolo">Già scelti, fuori dalla ricerca</div>
+          <div class="chip-servizi">${fuori.map(x => chip(x, coloreDi(x.categoriaId))).join('')}</div>
+        </div>`;
+      }
+      html += '<p class="campo__aiuto">Svuota la ricerca per rivedere tutto il listino.</p>';
+
+    } else {
+      // Quello che di solito fa: i suoi soliti, o in mancanza l'ultima volta.
+      const proposti = await store.serviziProposti(stato.cliente);
+      if (proposti) {
+        const elenco = proposti.servizi;
+        const tuttiScelti = elenco.every(a => stato.servizi.some(x => x.id === a.id));
+        const durataTot = elenco.reduce((t, a) => t + a.durata, 0);
+        const prezzoTot = elenco.reduce((t, a) => t + a.prezzo, 0);
+        const titolo = proposti.origine === 'abituali'
+          ? `★ I soliti di ${esc(stato.cliente.nome)}`
+          : `★ Come l'ultima volta${proposti.quando ? ` — ${esc(dataBreve(proposti.quando))}` : ''}`;
+        html += `<div class="gruppo-listino">
+          <div class="gruppo-listino__titolo">${titolo}</div>
+          <div class="chip-servizi">
+            <button class="chip chip--grande${tuttiScelti ? ' is-scelto' : ''}" id="carica-soliti" type="button"
+                    style="border-color:var(--oro)">
+              <span class="chip__riga">${tuttiScelti ? '✓ caricati' : 'Rifai gli stessi'}</span>
+              <span class="chip__meta" style="padding-left:0">${esc(elenco.map(a => a.nome).join(' + '))} · ${durataUmana(durataTot)} · ${euro(prezzoTot, valuta)}</span>
+            </button>
+          </div>
+        </div>`;
+      }
+
+      if (listino.preferiti.length) {
+        html += `<div class="gruppo-listino">
+          <div class="gruppo-listino__titolo">★ Più usati</div>
+          <div class="chip-servizi">${listino.preferiti.map(s => chip(s, coloreDi(s.categoriaId))).join('')}</div>
+        </div>`;
+      }
+      for (const g of listino.gruppi) {
+        const restanti = g.servizi.filter(s => !s.preferito);
+        if (!restanti.length) continue;
+        html += `<div class="gruppo-listino">
+          <div class="gruppo-listino__titolo">
+            <span class="punto-colore" style="background:${esc(g.categoria.colore)}"></span>${esc(g.categoria.nome)}
+          </div>
+          <div class="chip-servizi">${restanti.map(s => chip(s, g.categoria.colore)).join('')}</div>
+        </div>`;
+      }
+      if (!html) {
+        html = ui.statoVuoto({
+          titolo: 'Il listino è vuoto',
+          testo: 'Aggiungi i servizi dalle impostazioni per poterli selezionare qui.'
+        });
+      }
+      if (stato.cliente && stato.cliente.prezzi && Object.keys(stato.cliente.prezzi).length) {
+        html += `<p class="campo__aiuto" style="margin-top:4px">✱ prezzo o durata personalizzati per ${esc(stato.cliente.nome)}</p>`;
+      }
     }
 
     zonaServizi.innerHTML = html;
@@ -5379,17 +5589,32 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
 
     const soliti = zonaServizi.querySelector('#carica-soliti');
     if (soliti) soliti.addEventListener('click', async () => {
-      const abituali = await store.serviziAbitualiDi(stato.cliente);
-      const tuttiScelti = abituali.every(a => stato.servizi.some(x => x.id === a.id));
+      const proposti = await store.serviziProposti(stato.cliente);
+      if (!proposti) return;
+      const elenco = proposti.servizi;
+      const tuttiScelti = elenco.every(a => stato.servizi.some(x => x.id === a.id));
       if (tuttiScelti) {
-        stato.servizi = stato.servizi.filter(x => !abituali.some(a => a.id === x.id));
+        stato.servizi = stato.servizi.filter(x => !elenco.some(a => a.id === x.id));
       } else {
-        for (const a of abituali) if (!stato.servizi.some(x => x.id === a.id)) stato.servizi.push(a);
+        for (const a of elenco) if (!stato.servizi.some(x => x.id === a.id)) stato.servizi.push(a);
       }
       stato.durataManuale = null; stato.prezzoManuale = null;
       await disegnaServizi(); aggiorna(true);
     });
   }
+
+  const campoCercaServizio = radice.querySelector('#cerca-servizio');
+  campoCercaServizio.addEventListener('input', debounce(async () => {
+    stato.filtroServizi = campoCercaServizio.value;
+    await disegnaServizi();
+  }, 110));
+  campoCercaServizio.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && campoCercaServizio.value) {
+      campoCercaServizio.value = '';
+      stato.filtroServizi = '';
+      disegnaServizi();
+    }
+  });
 
   ui.su(zonaServizi, 'click', '[data-servizio]', async (e, el) => {
     const id = el.dataset.servizio;
@@ -5411,15 +5636,31 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   function disegnaGiorni() {
     const oggi = new Date();
     const giorni = [];
-    for (let i = 0; i < 7; i++) {
+
+    /* I prossimi sette giorni in cui il negozio è davvero aperto: la tabella
+       degli orari, le chiusure e le aperture extra decidono quali. Proporre
+       la domenica non serviva a niente e rubava un posto a un giorno buono.
+       Si guarda fino a 90 giorni avanti: se sono tutte ferie, si smette. */
+    const soloLavorativi = store.orariConfigurati();
+    for (let i = 0; i < 90 && giorni.length < 7; i++) {
       const d = addDays(oggi, i);
+      if (soloLavorativi && !store.giornoAperto(d)) continue;
       giorni.push({
         data: d,
         etichetta: i === 0 ? 'Oggi' : i === 1 ? 'Domani' : `${GIORNI_BREVI[d.getDay()]}`,
         sotto: `${d.getDate()} ${MESI_BREVI[d.getMonth()]}`
       });
     }
+    // Il giorno già scelto resta sempre in fila, anche se è di chiusura.
     const scelto = dayKey(stato.data);
+    if (!giorni.some(g => dayKey(g.data) === scelto) && scelto >= dayKey(oggi)) {
+      giorni.push({
+        data: new Date(stato.data),
+        etichetta: GIORNI_BREVI[stato.data.getDay()],
+        sotto: `${stato.data.getDate()} ${MESI_BREVI[stato.data.getMonth()]}`
+      });
+      giorni.sort((x, y) => dayKey(x.data).localeCompare(dayKey(y.data)));
+    }
     const fuoriElenco = !giorni.some(g => dayKey(g.data) === scelto);
 
     zonaGiorni.innerHTML = giorni.map(g => `
@@ -5430,7 +5671,9 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
         <strong>📅</strong><span>${fuoriElenco ? esc(`${stato.data.getDate()} ${MESI_BREVI[stato.data.getMonth()]}`) : 'altra data'}</span>
         <input type="date" id="data-libera" value="${dayKey(stato.data)}"
                style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
-      </label>`;
+      </label>` + (soloLavorativi
+        ? '<p class="campo__aiuto" style="width:100%;margin-top:7px">Compaiono solo i giorni di apertura. Per gli altri usa 📅.</p>'
+        : '');
 
     zonaGiorni.querySelectorAll('[data-giorno]').forEach(b => b.addEventListener('click', () => {
       stato.data = fromDayKey(b.dataset.giorno); stato.ora = null;
@@ -5827,7 +6070,7 @@ const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, dataBreve, dataEstesa, dayKey, fromDayKey, nomeCompleto, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.3.0';
+const VERSIONE_APP = '1.4.0';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
@@ -5863,7 +6106,13 @@ function inizializza({ suListinoCambiato } = {}) {
 }
 
 async function disegna() {
-  const pannello = document.getElementById('pannello-impostazioni');
+  // Un pannello nuovo di zecca a ogni disegno. Gli ascoltatori del disegno
+  // precedente sono attaccati al vecchio nodo e muoiono insieme a lui:
+  // senza questo, ogni riapertura di una sezione ne aggiungeva un altro
+  // e un solo tocco finiva per aprire due, tre, quattro finestre uguali.
+  const vecchio = document.getElementById('pannello-impostazioni');
+  const pannello = vecchio.cloneNode(false);   // solo il guscio: niente figli, niente ascoltatori
+  vecchio.replaceWith(pannello);
   const disegnatori = {
     negozio: dNegozio, listino: dListino, messaggi: dMessaggi, agenda: dAgenda, orari: dOrari,
     cliente: dCliente, colore: dColore, incassi: dIncassi, ponte: dPonte, backup: dBackup, sistema: dSistema
@@ -6431,6 +6680,7 @@ async function dOrari(p) {
   const configurati = store.orariConfigurati();
   const settimana = configurati ? a.settimana : store.settimanaTipica();
   const chiusure = [...(a.chiusure || [])].sort((x, y) => (x.da || '').localeCompare(y.da || ''));
+  const aperture = [...(a.aperture || [])].sort((x, y) => (x.giorno || '').localeCompare(y.giorno || ''));
   const oggi = dayKey(new Date());
 
   const ordineGiorni = [1, 2, 3, 4, 5, 6, 0];   // si parte da lunedì, come un'agenda vera
@@ -6520,6 +6770,60 @@ async function dOrari(p) {
     </div>
 
     <div class="blocco" style="max-width:900px">
+      <h3 class="blocco__titolo">Aperture extra</h3>
+      <p class="blocco__nota">Una giornata singola con orari suoi: il prefestivo, il lunedì sotto Natale,
+      il giorno in più prima delle feste. Vince su tutto — sulla settimana e anche sulle ferie —
+      perché riguarda un giorno solo.</p>
+
+      ${aperture.length ? aperture.map((e, i) => {
+        const passata = e.giorno < oggi;
+        const dentroFerie = store.chiusuraScrittaDi(e.giorno);
+        return `
+        <div class="riga-info" style="${passata ? 'opacity:.5' : ''}">
+          <span class="riga-info__etichetta">
+            ${esc(dataBreve(fromDayKey(e.giorno)))} · ${esc(e.apertura)}–${esc(e.chiusura)}${
+              e.pausaDa && e.pausaA ? ` (pausa ${esc(e.pausaDa)}–${esc(e.pausaA)})` : ''}
+            ${e.motivo ? ` — <strong>${esc(e.motivo)}</strong>` : ''}
+            ${passata ? ' (passata)' : ''}
+            ${dentroFerie && !passata ? `<br><small class="testo-tenue">cade in «${esc(dentroFerie.motivo || 'chiusura')}»: quel giorno resti aperta</small>` : ''}
+          </span>
+          <span><button class="btn-icona" data-apertura-via="${i}" title="Togli">&times;</button></span>
+        </div>`;
+      }).join('') : '<p class="testo-tenue">Nessuna apertura extra in programma.</p>'}
+
+      <div class="riga-campi--tre riga-campi" style="margin-top:16px">
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-giorno">Giorno</label>
+          <input class="input" id="ap-giorno" type="date" value="${esc(oggi)}">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-apertura">Apre</label>
+          <input class="input" id="ap-apertura" type="time" step="300" value="09:00">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-chiusura">Chiude</label>
+          <input class="input" id="ap-chiusura" type="time" step="300" value="19:00">
+        </div>
+      </div>
+      <div class="riga-campi--tre riga-campi" style="margin-top:12px">
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-pausa-da">Pausa da</label>
+          <input class="input" id="ap-pausa-da" type="time" step="300" value="">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-pausa-a">Pausa a</label>
+          <input class="input" id="ap-pausa-a" type="time" step="300" value="">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ap-motivo">Motivo</label>
+          <input class="input" id="ap-motivo" placeholder="prefestivo, Natale…">
+        </div>
+      </div>
+      <p class="campo__aiuto">Lascia vuota la pausa se quel giorno si tira dritto.</p>
+      <button class="btn btn--fantasma" id="ap-aggiungi" style="margin-top:12px">Aggiungi l'apertura extra</button>
+    </div>
+
+    <div class="blocco" style="max-width:900px">
       ${leva('o-avviso', 'Avvisa quando fisso fuori orario', a.avvisoFuoriOrario,
              'Un avviso, non un divieto: alla cliente affezionata si resta aperti')}
     </div>`;
@@ -6599,6 +6903,41 @@ async function dOrari(p) {
         azioni: '<button class="btn btn--principale" data-x="ok">Ho capito</button>'
       }).elemento.querySelector('[data-x="ok"]').addEventListener('click', () => ui.chiudiPannello()), 500);
     }
+    disegna();
+  });
+
+  p.querySelector('#ap-aggiungi').addEventListener('click', async () => {
+    const giorno = p.querySelector('#ap-giorno').value;
+    const apertura = p.querySelector('#ap-apertura').value || '09:00';
+    const chiusura = p.querySelector('#ap-chiusura').value || '19:00';
+    const pausaDa = p.querySelector('#ap-pausa-da').value || '';
+    const pausaA = p.querySelector('#ap-pausa-a').value || '';
+    const motivo = p.querySelector('#ap-motivo').value.trim();
+
+    if (!giorno) { ui.errore('Scegli il giorno'); return; }
+    if (chiusura <= apertura) { ui.errore('Chiude prima di aprire: controlla gli orari'); return; }
+    if (pausaDa && pausaA && pausaA <= pausaDa) { ui.errore('La pausa finisce prima di cominciare'); return; }
+    if (pausaDa && pausaA && (pausaDa < apertura || pausaA > chiusura)) {
+      ui.errore('La pausa cade fuori dall\'orario di quel giorno'); return;
+    }
+
+    // Un giorno, un'apertura: la nuova sostituisce quella che c'era.
+    const elenco = (cfg.get('agenda').aperture || []).filter(x => x && x.giorno !== giorno);
+    elenco.push({ giorno, apertura, chiusura, pausaDa, pausaA, motivo });
+    await cfg.imposta('agenda', { aperture: elenco });
+
+    ui.ok('Apertura extra aggiunta');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
+    disegna();
+  });
+
+  ui.su(p, 'click', '[data-apertura-via]', async (e, el) => {
+    const elenco = [...(cfg.get('agenda').aperture || [])]
+      .sort((x, y) => (x.giorno || '').localeCompare(y.giorno || ''));
+    elenco.splice(Number(el.dataset.aperturaVia), 1);
+    await cfg.imposta('agenda', { aperture: elenco });
+    ui.ok('Apertura extra tolta');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
     disegna();
   });
 
@@ -7194,6 +7533,16 @@ async function avvia() {
 
     document.querySelectorAll('.nav__voce').forEach(b =>
       b.addEventListener('click', () => vaiA(b.dataset.vista)));
+
+    // A giornata finita gli appuntamenti rimasti "previsto" passano a
+    // "concluso": si fa prima di disegnare l'agenda, così i colori sono
+    // già quelli giusti alla prima occhiata.
+    try {
+      const chiusi = await store.concludiGiorniPassati();
+      if (chiusi) console.info(`[Charme] ${chiusi} appuntamenti passati segnati come conclusi`);
+    } catch (e) {
+      console.warn('[Charme] chiusura degli appuntamenti passati non riuscita', e);
+    }
 
     // L'orizzonte degli appuntamenti fissi si sposta in avanti da solo:
     // così non finiscono mai e l'agenda lontana non si intasa.
