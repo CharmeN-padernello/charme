@@ -785,6 +785,106 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* --- appuntamento senza scheda cliente --- */
 .app-blocco--senza-scheda { border-left-style: dashed; }
 
+/* --- ore in cui il negozio è chiuso: si vedono, non bloccano --- */
+.agenda__chiuso {
+  position: absolute; left: -62px; right: 0;
+  background: repeating-linear-gradient(45deg, rgba(147,133,111,.055) 0 6px, transparent 6px 12px);
+  border-top: 1px solid var(--bordo-tenue);
+  border-bottom: 1px solid var(--bordo-tenue);
+  pointer-events: none; z-index: 0;
+}
+
+.fascia-chiusura {
+  display: flex; gap: 12px; align-items: flex-start;
+  margin: 0 0 14px; padding: 13px 16px;
+  background: var(--crema); border: 1px solid var(--bordo);
+  border-radius: var(--raggio); color: var(--bruno-medio); font-size: 14.5px; line-height: 1.5;
+}
+.fascia-chiusura strong { display: block; color: var(--bruno); }
+
+/* --- richieste in arrivo da Claude --- */
+.fascia-proposte {
+  display: flex; gap: 12px; align-items: center;
+  margin: 0 0 14px; padding: 13px 16px; cursor: pointer;
+  background: var(--oro-tenue); border: 1.5px solid rgba(176,141,87,.45);
+  border-radius: var(--raggio); color: var(--oro-scuro); font-size: 14.5px;
+  transition: box-shadow .16s;
+}
+.fascia-proposte:hover { box-shadow: var(--ombra-m); }
+.fascia-proposte strong { color: var(--bruno); }
+.fascia-proposte__coda { margin-left: auto; font-weight: 700; }
+
+.carta-proposta {
+  background: var(--superficie); border: 1px solid var(--bordo-tenue);
+  border-radius: var(--raggio); padding: 15px 17px; margin-bottom: 11px;
+}
+.carta-proposta__quando { font-family: var(--serif); font-size: 17px; }
+.carta-proposta__azioni { display: flex; gap: 10px; margin-top: 13px; flex-wrap: wrap; }
+
+/* --- tabella degli orari settimanali --- */
+.riga-giorno {
+  display: grid; grid-template-columns: 108px 78px repeat(4, minmax(72px, 1fr));
+  gap: 8px; align-items: center; padding: 7px 0;
+  border-bottom: 1px solid var(--bordo-tenue);
+}
+.riga-giorno:last-child { border-bottom: 0; }
+.riga-giorno__nome { font-weight: 600; text-transform: capitalize; font-size: 14.5px; }
+.riga-giorno input[type=time] { min-height: 40px; padding: 6px 8px; font-size: 14px; }
+.riga-giorno.is-chiuso input[type=time] { opacity: .35; pointer-events: none; }
+.riga-giorno__intestazione {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--bruno-tenue); font-weight: 700; text-align: center;
+}
+@media (max-width: 820px) {
+  .riga-giorno { grid-template-columns: 1fr 1fr; gap: 6px; padding: 12px 0; }
+  .riga-giorno__nome { grid-column: 1 / -1; }
+  .riga-giorno__intestazione { display: none; }
+}
+
+/* =============================================================================
+   AGENDA SU PIÙ GIORNI
+   ========================================================================== */
+
+.selettore-vista { width: auto; min-width: 120px; min-height: 40px; padding: 6px 34px 6px 12px; font-size: 14px; }
+
+.agenda__testate {
+  display: grid; gap: 8px; margin: 0 0 8px 62px;
+  position: sticky; top: 0; z-index: 8;
+  background: var(--avorio); padding-bottom: 6px;
+}
+.testata-giorno {
+  text-align: center; padding: 7px 6px; border-radius: var(--raggio-s);
+  background: var(--superficie); border: 1px solid var(--bordo-tenue); cursor: pointer;
+  transition: box-shadow .16s;
+}
+.testata-giorno:hover { box-shadow: var(--ombra-s); }
+.testata-giorno__nome {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--bruno-tenue); font-weight: 700;
+}
+.testata-giorno__numero { font-family: var(--serif); font-size: 19px; line-height: 1.15; }
+.testata-giorno__sotto { font-size: 11.5px; color: var(--bruno-tenue); margin-top: 1px; }
+.testata-giorno.is-oggi { background: var(--oro-tenue); border-color: rgba(176,141,87,.45); }
+.testata-giorno.is-oggi .testata-giorno__nome { color: var(--oro-scuro); }
+.testata-giorno.is-chiusa { opacity: .58; }
+
+.agenda__colonne { position: absolute; inset: 0; display: grid; gap: 8px; }
+.agenda__colonna { position: relative; min-width: 0; }
+.agenda__colonna + .agenda__colonna { border-left: 1px solid var(--bordo-tenue); }
+
+/* nella vista compatta il blocco deve restare leggibile anche stretto */
+.agenda--multi .app-blocco { padding: 5px 8px; border-left-width: 4px; }
+.agenda--multi .app-blocco__ora { font-size: 10.5px; }
+.agenda--multi .app-blocco__nome { font-size: 13px; }
+.agenda--multi .app-blocco__servizi { font-size: 11.5px; }
+.agenda--multi .app-blocco__coda { display: none; }
+.agenda--multi .agenda__chiuso { left: 0; }
+
+@media (max-width: 820px) {
+  .selettore-vista { min-width: 104px; font-size: 13px; }
+  .agenda__testate { margin-left: 52px; }
+}
+
 </style>
 </head>
 <body>
@@ -850,6 +950,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
         </button>
         <div class="barra-giorno__spazio"></div>
         <div class="riassunto" id="riassunto-giorno"></div>
+        <select class="scelta selettore-vista" id="selettore-vista" aria-label="Quanti giorni vedere">
+          <option value="1">Un giorno</option>
+          <option value="2">2 giorni</option>
+          <option value="3">3 giorni</option>
+          <option value="4">4 giorni</option>
+          <option value="6">6 giorni</option>
+        </select>
       </div>
       <div class="corpo" id="corpo-agenda">
         <div class="agenda" id="agenda"></div>
@@ -1562,8 +1669,22 @@ const PREDEFINITE = {
   },
 
   agenda: {
-    oraInizio: '08:00',
+    oraInizio: '08:00',       // estremi della griglia disegnata in agenda
     oraFine: '20:00',
+
+    /* Orari settimanali. Finché resta null valgono oraInizio/oraFine per tutti
+       i giorni: nessun comportamento cambia da solo sotto i piedi di chi
+       aggiorna. Diventa un elenco di sette voci quando lei lo compila.
+       Indice 0 = domenica, come vuole JavaScript.
+       Ogni voce: { aperto, apertura, chiusura, pausaDa, pausaA } */
+    settimana: null,
+
+    /* Ferie e chiusure straordinarie: [{ da, a, motivo }] */
+    chiusure: [],
+
+    avvisoFuoriOrario: true,
+    vistaGiorni: 1,              // quanti giorni affiancare in agenda
+    soloGiorniLavorativi: true,  // nella vista su più giorni salta i giorni di chiusura
     passoMinuti: 15,        // granularità degli orari proposti
     durataPredefinita: 30,  // per un appuntamento senza servizio
     avvisoSovrapposizione: 'avvisa',   // 'avvisa' | 'silenzioso' | 'off'
@@ -1605,6 +1726,9 @@ const PREDEFINITE = {
 
   ponte: {
     attivo: false,
+    backupSuServer: true,        // una copia al giorno, per trenta giorni
+    ultimoBackupServer: null,    // giorno dell'ultima copia inviata
+    ultimoControlloProposte: null,
     indirizzo: '',            // https://charme-ponte.<tuonome>.workers.dev
     chiaveScrittura: '',      // usata solo dal tablet per inviare
     chiaveLettura: '',        // serve solo a comporre i link per il telefono
@@ -2546,8 +2670,12 @@ async function verificaConflitti(inizioIso, durata, { escludiId = null, servizi 
 async function orariLiberi(data, durata, { escludiId = null, servizi = null, includiOccupati = false } = {}) {
   const agenda = cfg.get('agenda');
   const passo = agenda.passoMinuti || 15;
-  const inizioGiornata = minutiDaHHMM(agenda.oraInizio);
-  const fineGiornata = minutiDaHHMM(agenda.oraFine);
+  const giorno = dayKey(data);
+
+  // Si propone solo dentro le fasce di apertura: la pausa pranzo e i giorni
+  // chiusi non devono comparire fra gli orari liberi.
+  const fasce = fasceDelGiorno(giorno);
+  if (!fasce.length) return [];
 
   const esistenti = (await appuntamentiDelGiorno(data))
     .filter(a => a.id !== escludiId && a.stato !== 'annullato');
@@ -2555,33 +2683,34 @@ async function orariLiberi(data, durata, { escludiId = null, servizi = null, inc
     app: a, lavoro: finestreLavoro(a), attesa: finestreAttesa(a)
   }));
 
-  const oggi = dayKey(new Date()) === dayKey(data);
+  const oggi = dayKey(new Date()) === giorno;
   const adesso = new Date();
   const minutiOra = adesso.getHours() * 60 + adesso.getMinutes();
-  const giorno = dayKey(data);
 
   const risultato = [];
-  for (let t = inizioGiornata; t + Number(durata) <= fineGiornata; t += passo) {
-    if (oggi && t < minutiOra - passo) continue;
+  for (const fascia of fasce) {
+    for (let t = fascia.da; t + Number(durata) <= fascia.a; t += passo) {
+      if (oggi && t < minutiOra - passo) continue;
 
-    const lavoroNuovo = finestreLavoro(
-      appuntamentoIpotetico(`${giorno}T${hhmmDaMinuti(t)}`, durata, servizi)
-    );
+      const lavoroNuovo = finestreLavoro(
+        appuntamentoIpotetico(`${giorno}T${hhmmDaMinuti(t)}`, durata, servizi)
+      );
 
-    const conflitto = altrui.find(x => inConflitto(lavoroNuovo, x.lavoro));
-    const inPosa = !conflitto && altrui.find(x => inConflitto(lavoroNuovo, x.attesa));
+      const conflitto = altrui.find(x => inConflitto(lavoroNuovo, x.lavoro));
+      const inPosa = !conflitto && altrui.find(x => inConflitto(lavoroNuovo, x.attesa));
 
-    const voce = {
-      ora: hhmmDaMinuti(t),
-      minuti: t,
-      libero: !conflitto,
-      durantePosa: !!inPosa,
-      appuntamentoInPosa: inPosa ? inPosa.app : null,
-      conflittoCon: conflitto ? conflitto.app : null
-    };
-    if (voce.libero || includiOccupati) risultato.push(voce);
+      const voce = {
+        ora: hhmmDaMinuti(t),
+        minuti: t,
+        libero: !conflitto,
+        durantePosa: !!inPosa,
+        appuntamentoInPosa: inPosa ? inPosa.app : null,
+        conflittoCon: conflitto ? conflitto.app : null
+      };
+      if (voce.libero || includiOccupati) risultato.push(voce);
+    }
   }
-  return risultato;
+  return risultato.sort((a, b) => a.minuti - b.minuti);
 }
 
 async function primoOrarioUtile(data, durata, servizi = null) {
@@ -2747,7 +2876,16 @@ async function generaOccorrenze(cliente, { orizzonteGiorni = ORIZZONTE_GIORNI } 
   let giorno = r.dataInizio;
   let giri = 0;
 
+  const saltatePerChiusura = [];
+
   while (giorno <= limite && giri++ < 500) {
+    // Un appuntamento fisso non si crea a saracinesca abbassata: si salta e si dice.
+    if (giorno >= oggi && !giaFatte.has(giorno) && !saltate.has(giorno) && !giornoAperto(giorno)) {
+      const c = chiusuraDi(giorno);
+      saltatePerChiusura.push({ giorno, motivo: c ? (c.motivo || 'chiusura') : 'giorno di chiusura' });
+      giorno = dayKey(addDays(fromDayKey(giorno), Number(r.cadenzaGiorni)));
+      continue;
+    }
     if (giorno >= oggi && !giaFatte.has(giorno) && !saltate.has(giorno)) {
       const inizio = `${giorno}T${r.ora}`;
       const durata = durataDaServizi(servizi) || cfg.get('agenda').durataPredefinita;
@@ -2773,7 +2911,7 @@ async function generaOccorrenze(cliente, { orizzonteGiorni = ORIZZONTE_GIORNI } 
   });
 
   if (create) document.dispatchEvent(new CustomEvent('dati:cambiati'));
-  return { create, conflitti, serieId };
+  return { create, conflitti, saltatePerChiusura, serieId };
 }
 
 /** All'avvio dell'app: sposta in avanti l'orizzonte di tutte le serie attive. */
@@ -2781,13 +2919,17 @@ async function rigeneraTutteLeSerie() {
   const clienti = await elencoClienti();
   let totale = 0;
   const conflitti = [];
+  const chiusure = [];
   for (const c of clienti) {
     if (!c.ricorrenza || !c.ricorrenza.attiva) continue;
     const esito = await generaOccorrenze(c);
     totale += esito.create;
     if (esito.conflitti.length) conflitti.push({ cliente: c, conflitti: esito.conflitti });
+    if (esito.saltatePerChiusura && esito.saltatePerChiusura.length) {
+      chiusure.push({ cliente: c, saltate: esito.saltatePerChiusura });
+    }
   }
-  return { create: totale, conflitti };
+  return { create: totale, conflitti, chiusure };
 }
 
 async function occorrenzeSerie(serieId, { daGiorno = dayKey(new Date()) } = {}) {
@@ -2849,7 +2991,111 @@ async function spostaSerie(appuntamento, { ora = null, cadenzaGiorni = null } = 
   return future.length;
 }
 
-return { ORIZZONTE_GIORNI, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, fermaSerie, finestreAttesa, finestreLavoro, generaOccorrenze, giornataCompleta, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, servizioPerCliente, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
+/* =========================================================================
+   ORARI DEL NEGOZIO E CHIUSURE
+
+   Finché la tabella settimanale non viene compilata, vale la vecchia fascia
+   unica: aggiornare l'app non deve cambiare il comportamento sotto i piedi.
+   ========================================================================= */
+
+const NOMI_GIORNI = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+
+/** Una settimana tipica, da proporre a chi non ha ancora compilato niente. */
+function settimanaTipica(apertura = '09:00', chiusura = '19:00') {
+  return [0,1,2,3,4,5,6].map(i => ({
+    aperto: i !== 0 && i !== 1,               // domenica e lunedì chiusi
+    apertura,
+    chiusura,
+    pausaDa: i === 6 ? '' : '12:30',          // il sabato di solito si tira dritto
+    pausaA:  i === 6 ? '' : '14:30'
+  }));
+}
+
+/** La chiusura straordinaria che copre quel giorno, se c'è. */
+function chiusuraDi(data) {
+  const g = typeof data === 'string' ? data : dayKey(data);
+  for (const c of (cfg.get('agenda').chiusure || [])) {
+    if (!c || !c.da) continue;
+    if (g >= c.da && g <= (c.a || c.da)) return c;
+  }
+  return null;
+}
+
+/**
+ * Le fasce di apertura di quel giorno, in minuti dalla mezzanotte.
+ * Vuoto se il negozio è chiuso.
+ */
+function fasceDelGiorno(data) {
+  const a = cfg.get('agenda');
+  const g = typeof data === 'string' ? data : dayKey(data);
+  if (chiusuraDi(g)) return [];
+
+  if (!Array.isArray(a.settimana) || a.settimana.length !== 7) {
+    return [{ da: minutiDaHHMM(a.oraInizio), a: minutiDaHHMM(a.oraFine) }];
+  }
+  const giorno = a.settimana[fromDayKey(g).getDay()];
+  if (!giorno || !giorno.aperto) return [];
+
+  const apertura = minutiDaHHMM(giorno.apertura);
+  const chiusura = minutiDaHHMM(giorno.chiusura);
+  if (giorno.pausaDa && giorno.pausaA && minutiDaHHMM(giorno.pausaA) > minutiDaHHMM(giorno.pausaDa)) {
+    return [
+      { da: apertura, a: minutiDaHHMM(giorno.pausaDa) },
+      { da: minutiDaHHMM(giorno.pausaA), a: chiusura }
+    ].filter(f => f.a > f.da);
+  }
+  return apertura < chiusura ? [{ da: apertura, a: chiusura }] : [];
+}
+
+function giornoAperto(data) { return fasceDelGiorno(data).length > 0; }
+
+function orariConfigurati() {
+  const s = cfg.get('agenda').settimana;
+  return Array.isArray(s) && s.length === 7;
+}
+
+/** Gli estremi da disegnare in agenda: comodi, non vincolanti. */
+function estremiGriglia() {
+  const a = cfg.get('agenda');
+  let da = minutiDaHHMM(a.oraInizio), fine = minutiDaHHMM(a.oraFine);
+  if (Array.isArray(a.settimana) && a.settimana.length === 7) {
+    const aperti = a.settimana.filter(g => g && g.aperto);
+    if (aperti.length) {
+      da = Math.min(...aperti.map(g => minutiDaHHMM(g.apertura)));
+      fine = Math.max(...aperti.map(g => minutiDaHHMM(g.chiusura)));
+      da = Math.max(0, da - 30);              // mezz'ora di margine per gli sconfinamenti
+      fine = Math.min(24 * 60, fine + 30);
+    }
+  }
+  return { da, a: fine };
+}
+
+/**
+ * L'appuntamento sta fuori dall'orario di apertura?
+ * @returns null se va bene, altrimenti { motivo }
+ */
+function fuoriOrario(inizioIso, durata) {
+  if (!cfg.get('agenda').avvisoFuoriOrario) return null;
+  const giorno = inizioIso.slice(0, 10);
+  const chiusura = chiusuraDi(giorno);
+  if (chiusura) {
+    return { motivo: chiusura.motivo ? `sei chiusa: ${chiusura.motivo}` : 'sei chiusa' };
+  }
+  const fasce = fasceDelGiorno(giorno);
+  if (!fasce.length) {
+    return { motivo: `di ${NOMI_GIORNI[fromDayKey(giorno).getDay()]} il negozio è chiuso` };
+  }
+  const da = minutiDaHHMM(inizioIso.slice(11));
+  const a = da + Number(durata || 0);
+  const dentro = fasce.some(f => da >= f.da && a <= f.a);
+  if (dentro) return null;
+
+  const inPausa = fasce.length > 1 && da >= fasce[0].a && a <= fasce[1].da;
+  if (inPausa) return { motivo: 'cade nella pausa' };
+  return { motivo: `l'orario di quel giorno è ${fasce.map(f => `${hhmmDaMinuti(f.da)}–${hhmmDaMinuti(f.a)}`).join(' e ')}` };
+}
+
+return { NOMI_GIORNI, ORIZZONTE_GIORNI, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, chiusuraDi, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, estremiGriglia, fasceDelGiorno, fermaSerie, finestreAttesa, finestreLavoro, fuoriOrario, generaOccorrenze, giornataCompleta, giornoAperto, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariConfigurati, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, servizioPerCliente, settimanaTipica, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
 })();
 
 /* ======================= js/ponte.js ======================= */
@@ -2992,6 +3238,9 @@ async function costruisciPacchetto() {
     negozio: cfg.get('negozio').nome,
     oraInizio: agendaCfg.oraInizio,
     oraFine: agendaCfg.oraFine,
+    // Senza questi Claude proporrebbe orari a saracinesca abbassata.
+    settimana: agendaCfg.settimana || null,
+    chiusure: agendaCfg.chiusure || [],
     periodo: { da: daGiorno, a: aGiorno },
     agenda,
     clienti: elencoClienti,
@@ -3066,6 +3315,11 @@ async function sincronizza({ manuale = false } = {}) {
       ultimoConteggio: esito.ricevuti || null
     });
     document.dispatchEvent(new CustomEvent('ponte:cambiato'));
+
+    // Una volta al giorno, appesa a una sincronizzazione riuscita, parte anche
+    // la copia di sicurezza completa. Non blocca né disturba se fallisce.
+    inviaBackupGiornaliero().catch(() => {});
+
     return { ok: true, messaggio: 'Agenda inviata', dettagli: esito.ricevuti };
 
   } catch (e) {
@@ -3128,6 +3382,7 @@ function avvia() {
   setInterval(() => { if (cfg.get('ponte').inSospeso) sincronizza(); }, 15 * 60 * 1000);
 
   if (configurato()) programma(4000);
+  avviaControlloProposte();
 }
 
 /** Da quante ore il ponte non riceve dati (null se mai sincronizzato o spento). */
@@ -3137,7 +3392,144 @@ function oreDaUltimaSincronizzazione() {
   return (Date.now() - Date.parse(p.ultimaSincronizzazione)) / 3600000;
 }
 
-return { avvia, configurato, costruisciPacchetto, indirizzoConnettore, indirizzoConsultazione, oreDaUltimaSincronizzazione, prova, sincronizza };
+/* =========================================================================
+   BACKUP AUTOMATICO SUL SERVER
+
+   Il canale della sincronizzazione porta il riassunto per Claude. Questo
+   porta il database vero e proprio: è quello che serve per ricostruire tutto
+   su un tablet nuovo. Una copia al giorno, non una a ogni modifica.
+   ========================================================================= */
+
+function indirizzoBackup(coda = '') {
+  const p = cfg.get('ponte');
+  if (!p.indirizzo || !p.chiaveScrittura) return null;
+  const base = p.indirizzo.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return null;
+  return `${base}/${p.chiaveScrittura.trim()}/backup${coda}`;
+}
+
+/** Manda la copia di oggi, se non è già stata mandata. */
+async function inviaBackupGiornaliero({ forza = false } = {}) {
+  const p = cfg.get('ponte');
+  if (!p.attivo || !p.backupSuServer) return { ok: false, messaggio: 'backup sul server spento' };
+  const url = indirizzoBackup();
+  if (!url) return { ok: false, messaggio: 'ponte non configurato' };
+
+  const oggi = dayKey(new Date());
+  if (!forza && p.ultimoBackupServer === oggi) {
+    return { ok: true, messaggio: 'copia di oggi già inviata', saltato: true };
+  }
+
+  try {
+    const pacchetto = await db.esporta({ includiFoto: false });
+    const risposta = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pacchetto),
+      cache: 'no-store'
+    });
+    if (!risposta.ok) throw new Error(`il server ha risposto ${risposta.status}`);
+    const esito = await risposta.json();
+    await cfg.imposta('ponte', { ultimoBackupServer: oggi });
+    document.dispatchEvent(new CustomEvent('ponte:cambiato'));
+    return { ok: true, messaggio: 'Copia di sicurezza inviata', byte: esito.byte };
+  } catch (e) {
+    return { ok: false, messaggio: e.message || 'errore di rete' };
+  }
+}
+
+/** Le copie disponibili sul server, dalla più recente. */
+async function copieSulServer() {
+  const url = indirizzoBackup();
+  if (!url) return { ok: false, messaggio: 'ponte non configurato', copie: [] };
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`il server ha risposto ${r.status}`);
+    return await r.json();
+  } catch (e) {
+    return { ok: false, messaggio: e.message || 'errore di rete', copie: [] };
+  }
+}
+
+async function scaricaCopia(giorno) {
+  const url = indirizzoBackup('/' + giorno);
+  if (!url) throw new Error('ponte non configurato');
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`copia non trovata (${r.status})`);
+  return r.json();
+}
+
+async function svuotaCopieSulServer() {
+  const url = indirizzoBackup('/svuota');
+  if (!url) return { ok: false };
+  const r = await fetch(url, { method: 'POST', cache: 'no-store' });
+  return r.json();
+}
+
+/* =========================================================================
+   PROPOSTE DA CLAUDE
+
+   Il tablet va a vedere se ce ne sono: non c'è modo di farsi chiamare.
+   Controlla all'apertura dell'app e ogni pochi minuti mentre è accesa.
+   ========================================================================= */
+
+const OGNI_QUANTO_CONTROLLO = 5 * 60 * 1000;
+let proposteInMemoria = [];
+
+function indirizzoProposte(coda = '') {
+  const p = cfg.get('ponte');
+  if (!p.attivo || !p.indirizzo || !p.chiaveScrittura) return null;
+  const base = p.indirizzo.trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//.test(base)) return null;
+  return `${base}/${p.chiaveScrittura.trim()}/proposte${coda}`;
+}
+
+function proposte() { return proposteInMemoria; }
+
+async function controllaProposte() {
+  const url = indirizzoProposte();
+  if (!url) return [];
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return proposteInMemoria;
+    const esito = await r.json();
+    const nuove = Array.isArray(esito.proposte) ? esito.proposte : [];
+    const cambiate = nuove.length !== proposteInMemoria.length ||
+      nuove.some((p, i) => !proposteInMemoria[i] || proposteInMemoria[i].id !== p.id);
+    proposteInMemoria = nuove;
+    await cfg.imposta('ponte', { ultimoControlloProposte: new Date().toISOString() });
+    if (cambiate) document.dispatchEvent(new CustomEvent('proposte:cambiate', { detail: { quante: nuove.length } }));
+    return nuove;
+  } catch {
+    return proposteInMemoria;
+  }
+}
+
+/** Toglie la proposta dal server: gestita, in un senso o nell'altro. */
+async function chiudiProposta(id, esito) {
+  const url = indirizzoProposte('/' + id);
+  if (!url) return false;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esito })
+    });
+  } catch { /* se non si riesce a toglierla, ricomparirà: meglio che perderla */ }
+  proposteInMemoria = proposteInMemoria.filter(p => p.id !== id);
+  document.dispatchEvent(new CustomEvent('proposte:cambiate', { detail: { quante: proposteInMemoria.length } }));
+  return true;
+}
+
+function avviaControlloProposte() {
+  const giro = () => { if (configurato()) controllaProposte(); };
+  setTimeout(giro, 6000);
+  setInterval(giro, OGNI_QUANTO_CONTROLLO);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) giro(); });
+  window.addEventListener('online', giro);
+}
+
+return { avvia, avviaControlloProposte, chiudiProposta, configurato, controllaProposte, copieSulServer, costruisciPacchetto, indirizzoConnettore, indirizzoConsultazione, inviaBackupGiornaliero, oreDaUltimaSincronizzazione, proposte, prova, scaricaCopia, sincronizza, svuotaCopieSulServer };
 })();
 
 /* ======================= js/views/agenda.js ======================= */
@@ -3149,7 +3541,7 @@ const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
 const ponte = MOD.ponte;
-const { dataEstesa, dataBreve, ora, euro, esc, addDays, dayKey, isToday, minutiDaHHMM, hhmmDaMinuti, durataUmana, nomeCompleto, iniziali, daIsoLocale, telefonoLeggibile, debounce } = MOD.util;
+const { dataEstesa, dataBreve, ora, euro, esc, addDays, dayKey, fromDayKey, isToday, minutiDaHHMM, hhmmDaMinuti, durataUmana, nomeCompleto, iniziali, daIsoLocale, telefonoLeggibile, debounce, GIORNI_BREVI } = MOD.util;
 
 let dataCorrente = new Date();
 let apriNuovo = null;      // iniettata da app.js per evitare dipendenze circolari
@@ -3160,17 +3552,34 @@ function inizializza({ suNuovoAppuntamento, suApriCliente }) {
   apriNuovo = suNuovoAppuntamento;
   apriCliente = suApriCliente;
 
-  document.getElementById('giorno-prec').addEventListener('click', () => vaiA(addDays(dataCorrente, -1)));
-  document.getElementById('giorno-succ').addEventListener('click', () => vaiA(addDays(dataCorrente, 1)));
+  const passoNavigazione = () => Math.max(1, Number(cfg.get('agenda').vistaGiorni) || 1);
+  document.getElementById('giorno-prec').addEventListener('click', () => vaiA(addDays(dataCorrente, -passoNavigazione())));
+  document.getElementById('giorno-succ').addEventListener('click', () => vaiA(addDays(dataCorrente, passoNavigazione())));
   document.getElementById('vai-oggi').addEventListener('click', () => vaiA(new Date()));
   document.getElementById('btn-nuovo').addEventListener('click', () => apriNuovo({ data: dataCorrente }));
   document.getElementById('cerca-scheda').addEventListener('click', () => apriRicercaScheda());
 
+  const selettore = document.getElementById('selettore-vista');
+  selettore.value = String(cfg.get('agenda').vistaGiorni || 1);
+  selettore.addEventListener('change', async () => {
+    await cfg.imposta('agenda', { vistaGiorni: Number(selettore.value) || 1 });
+    disegna();
+  });
+
   const agenda = document.getElementById('agenda');
   ui.su(agenda, 'click', '.app-blocco', (e, el) => mostraDettaglio(el.dataset.id));
   ui.su(agenda, 'click', '.agenda__vuoto', (e, el) => {
-    apriNuovo({ data: dataCorrente, oraSuggerita: el.dataset.ora });
+    const colonna = el.closest('[data-giorno-colonna]');
+    const giorno = colonna ? fromDayKey(colonna.dataset.giornoColonna) : dataCorrente;
+    apriNuovo({ data: giorno, oraSuggerita: el.dataset.ora });
   });
+  ui.su(agenda, 'click', '.testata-giorno', (e, el) => {
+    vaiA(fromDayKey(el.dataset.giorno));
+    const s = document.getElementById('selettore-vista');
+    if (s.value !== '1') { s.value = '1'; cfg.imposta('agenda', { vistaGiorni: 1 }).then(() => disegna()); }
+  });
+  ui.su(agenda, 'click', '.fascia-proposte', () => pannelloProposte());
+  document.addEventListener('proposte:cambiate', () => disegna());
 
   document.addEventListener('dati:cambiati', () => disegna());
   document.addEventListener('impostazioni:cambiate', () => disegna());
@@ -3186,69 +3595,129 @@ function dataVisualizzata() { return new Date(dataCorrente); }
 /* ---------- disegno ---------- */
 
 async function disegna() {
-  const agenda = cfg.get('agenda');
+  const agendaCfg = cfg.get('agenda');
   const valuta = cfg.get('incassi').valuta;
-  const inizioMin = minutiDaHHMM(agenda.oraInizio);
-  const fineMin = minutiDaHHMM(agenda.oraFine);
-  const ppm = agenda.densita === 'compatta' ? 1.1 : (agenda.minutiPerPixel || 1.6);
+  const quanti = Math.max(1, Number(agendaCfg.vistaGiorni) || 1);
+  const multi = quanti > 1;
 
-  // intestazione
+  const griglia = store.estremiGriglia();
+  const inizioMin = griglia.da;
+  const fineMin = griglia.a;
+  const ppm = agendaCfg.densita === 'compatta' ? 1.1 : (agendaCfg.minutiPerPixel || 1.6);
+
+  /* --- quali giorni mostrare --- */
+  const giorni = [];
+  if (!multi) {
+    giorni.push(new Date(dataCorrente));
+  } else {
+    let d = new Date(dataCorrente), guardia = 0;
+    while (giorni.length < quanti && guardia++ < 90) {
+      if (!agendaCfg.soloGiorniLavorativi || store.giornoAperto(d)) giorni.push(new Date(d));
+      d = addDays(d, 1);
+    }
+    // tutto chiuso davanti a noi: meglio mostrare i giorni veri che una pagina vuota
+    if (!giorni.length) for (let i = 0; i < quanti; i++) giorni.push(addDays(dataCorrente, i));
+  }
+
+  /* --- intestazione --- */
   const etichetta = document.getElementById('etichetta-giorno');
-  etichetta.innerHTML = `${esc(dataEstesa(dataCorrente))}<small>${isToday(dataCorrente) ? 'oggi' : dayKey(dataCorrente).split('-').reverse().join('/')}</small>`;
-  document.getElementById('vai-oggi').hidden = isToday(dataCorrente);
+  if (multi) {
+    const primo = giorni[0], ultimo = giorni[giorni.length - 1];
+    etichetta.innerHTML = `${esc(dataBreve(primo))} – ${esc(dataBreve(ultimo))}` +
+      `<small>${giorni.length} ${giorni.length === 1 ? 'giornata' : 'giornate'}${agendaCfg.soloGiorniLavorativi ? ' di lavoro' : ''}</small>`;
+  } else {
+    etichetta.innerHTML = `${esc(dataEstesa(dataCorrente))}<small>${isToday(dataCorrente) ? 'oggi' : dayKey(dataCorrente).split('-').reverse().join('/')}</small>`;
+  }
+  document.getElementById('vai-oggi').hidden = !multi && isToday(dataCorrente);
 
-  const [appuntamenti, riepilogo] = await Promise.all([
-    store.giornataCompleta(dataCorrente),
-    store.riepilogoGiorno(dataCorrente)
-  ]);
+  /* --- dati di tutte le giornate mostrate --- */
+  const giornate = [];
+  for (const g of giorni) {
+    giornate.push({
+      data: g,
+      chiave: dayKey(g),
+      appuntamenti: (await store.giornataCompleta(g)).filter(a => a.stato !== 'annullato'),
+      riepilogo: await store.riepilogoGiorno(g),
+      fasce: store.fasceDelGiorno(g),
+      chiusura: store.chiusuraDi(g)
+    });
+  }
 
-  // se il telefono non riceve dati da un pezzo, va detto: non deve accorgersene
-  // Veronica scoprendo che Claude le risponde con l'agenda della settimana scorsa
-  const ore = ponte.oreDaUltimaSincronizzazione();
-  const ponteInDifficolta = cfg.get('ponte').attivo && (cfg.get('ponte').inSospeso || (ore !== null && ore > 24));
-  const avvisoPonte = ponteInDifficolta
-    ? `<span class="pillola pillola--rossa" id="avviso-ponte" title="Tocca per aprire le impostazioni del ponte"
-             style="cursor:pointer">📱 telefono non aggiornato</span>`
-    : '';
+  const totaleClienti = giornate.reduce((t, g) => t + g.appuntamenti.length, 0);
+  const totaleLavoro = giornate.reduce((t, g) => t + g.riepilogo.minutiOccupati, 0);
+  const totalePrevisto = giornate.reduce((t, g) => t + g.riepilogo.previsto, 0);
 
-  document.getElementById('riassunto-giorno').innerHTML = avvisoPonte + `
+  document.getElementById('riassunto-giorno').innerHTML = `
     <div class="riassunto__voce">
-      <div class="riassunto__valore">${riepilogo.totale}</div>
-      <div class="riassunto__etichetta">${riepilogo.totale === 1 ? 'cliente' : 'clienti'}</div>
+      <div class="riassunto__valore">${totaleClienti}</div>
+      <div class="riassunto__etichetta">${totaleClienti === 1 ? 'cliente' : 'clienti'}</div>
     </div>
     <div class="riassunto__voce">
-      <div class="riassunto__valore">${durataUmana(riepilogo.minutiOccupati)}</div>
+      <div class="riassunto__valore">${durataUmana(totaleLavoro)}</div>
       <div class="riassunto__etichetta">di lavoro</div>
     </div>
-    ${agenda.mostraPrezzi ? `
+    ${agendaCfg.mostraPrezzi ? `
     <div class="riassunto__voce">
-      <div class="riassunto__valore">${euro(riepilogo.previsto, valuta)}</div>
+      <div class="riassunto__valore">${euro(totalePrevisto, valuta)}</div>
       <div class="riassunto__etichetta">previsto</div>
     </div>` : ''}
   `;
 
-  // griglia
+  /* --- disegno --- */
   const altezza = (fineMin - inizioMin) * ppm;
   const contenitore = document.getElementById('agenda');
-  const attivi = appuntamenti.filter(a => a.stato !== 'annullato');
-  const colonne = disponiInColonne(attivi);
+  contenitore.classList.toggle('agenda--multi', multi);
 
-  let html = `<div class="agenda__griglia" style="height:${altezza}px">`;
+  let html = '';
 
-  // linee orarie e fasce vuote cliccabili
+  // richieste da Claude e chiusura: cappelli sopra tutto
+  const inAttesa = ponte.proposte();
+  if (inAttesa.length) {
+    html += `<div class="fascia-proposte">
+      <span style="font-size:20px">📥</span>
+      <div><strong>${inAttesa.length} ${inAttesa.length === 1 ? 'richiesta in attesa' : 'richieste in attesa'}</strong>
+      <div class="testo-tenue">arrivate da Claude — da confermare</div></div>
+      <span class="fascia-proposte__coda">Guarda ›</span>
+    </div>`;
+  }
+  if (!multi && !giornate[0].fasce.length) {
+    const c = giornate[0].chiusura;
+    html += `<div class="fascia-chiusura">
+      <span>🔒</span>
+      <div><strong>${esc(c ? (c.motivo || 'Chiusura straordinaria') : 'Negozio chiuso')}</strong>
+      ${c ? esc(`dal ${dataBreve(fromDayKey(c.da))} al ${dataBreve(fromDayKey(c.a || c.da))}`)
+          : `di ${esc(store.NOMI_GIORNI[dataCorrente.getDay()])} non si lavora`}
+      ${giornate[0].appuntamenti.length ? ` — ma ci sono ${giornate[0].appuntamenti.length} appuntamenti in agenda` : ''}</div>
+    </div>`;
+  }
+
+  // testate dei giorni, solo quando ce n'è più di uno
+  if (multi) {
+    html += `<div class="agenda__testate" style="grid-template-columns:repeat(${giornate.length},1fr)">`;
+    for (const g of giornate) {
+      const aperto = g.fasce.length > 0;
+      html += `<div class="testata-giorno${isToday(g.data) ? ' is-oggi' : ''}${aperto ? '' : ' is-chiusa'}" data-giorno="${g.chiave}">
+        <div class="testata-giorno__nome">${esc(GIORNI_BREVI[g.data.getDay()])}</div>
+        <div class="testata-giorno__numero">${g.data.getDate()}</div>
+        <div class="testata-giorno__sotto">${aperto
+          ? `${g.appuntamenti.length || '—'}${g.appuntamenti.length ? (agendaCfg.mostraPrezzi ? ' · ' + euro(g.riepilogo.previsto, valuta) : '') : ''}`
+          : (g.chiusura ? esc(g.chiusura.motivo || 'chiuso') : 'chiuso')}</div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  html += `<div class="agenda__griglia" style="height:${altezza}px">`;
+
+  // linee orarie e fasce vuote cliccabili (solo su un giorno: in multi si tocca la colonna)
   for (let m = inizioMin; m <= fineMin; m += 30) {
     const y = (m - inizioMin) * ppm;
     const intera = m % 60 === 0;
     html += `<div class="agenda__linea${intera ? '' : ' agenda__linea--mezza'}" style="top:${y}px"></div>`;
-    if (m < fineMin) {
-      html += `<div class="agenda__ora${intera ? '' : ' agenda__ora--mezza'}" style="top:${y}px">${hhmmDaMinuti(m)}</div>`;
-      html += `<div class="agenda__vuoto" data-ora="${hhmmDaMinuti(m)}"
-                    style="position:absolute;left:0;right:0;top:${y}px;height:${30 * ppm}px;cursor:pointer"></div>`;
-    }
+    if (m < fineMin) html += `<div class="agenda__ora${intera ? '' : ' agenda__ora--mezza'}" style="top:${y}px">${hhmmDaMinuti(m)}</div>`;
   }
 
-  // riga dell'ora corrente
-  if (isToday(dataCorrente)) {
+  if (isToday(dataCorrente) || giornate.some(g => isToday(g.data))) {
     const adesso = new Date();
     const m = adesso.getHours() * 60 + adesso.getMinutes();
     if (m >= inizioMin && m <= fineMin) {
@@ -3256,70 +3725,46 @@ async function disegna() {
     }
   }
 
-  // appuntamenti
-  for (const a of attivi) {
-    const inizio = minutiDaHHMM(a.inizio.slice(11));
-    const top = (inizio - inizioMin) * ppm;
-    const alt = Math.max(38, a.durata * ppm - 3);
-    const col = colonne.get(a.id) || { indice: 0, totale: 1 };
-    const larghezza = 100 / col.totale;
-    const sinistra = larghezza * col.indice;
-    const corto = alt < 62;
-    const colore = a._colore || 'var(--oro)';
+  html += `<div class="agenda__colonne" style="grid-template-columns:repeat(${giornate.length},1fr)">`;
+  for (const g of giornate) {
+    html += `<div class="agenda__colonna" data-giorno-colonna="${g.chiave}">`;
 
-    const nome = a.nomeVisualizzato || (a.cliente ? nomeCompleto(a.cliente) : 'Cliente eliminata');
-    const servizi = (a.servizi || []).map(s => s.nome).join(', ') || 'Appuntamento';
+    // ore chiuse, ombreggiate
+    const zone = [];
+    if (!g.fasce.length) zone.push({ da: inizioMin, a: fineMin });
+    else {
+      if (g.fasce[0].da > inizioMin) zone.push({ da: inizioMin, a: g.fasce[0].da });
+      for (let i = 0; i < g.fasce.length - 1; i++) zone.push({ da: g.fasce[i].a, a: g.fasce[i + 1].da });
+      if (g.fasce[g.fasce.length - 1].a < fineMin) zone.push({ da: g.fasce[g.fasce.length - 1].a, a: fineMin });
+    }
+    for (const z of zone) {
+      const cima = (Math.max(z.da, inizioMin) - inizioMin) * ppm;
+      const alt = (Math.min(z.a, fineMin) - Math.max(z.da, inizioMin)) * ppm;
+      if (alt > 1) html += `<div class="agenda__chiuso" style="top:${cima}px;height:${alt}px"></div>`;
+    }
 
-    // Le attese vanno disegnate dove cadono davvero: in mezzo, non in fondo.
-    const bandeAttesa = store.tratti(a)
-      .filter(t => t.tipo === 'attesa')
-      .map(t => {
-        const cima = t.da * ppm;
-        const altezza = (t.a - t.da) * ppm;
-        return altezza > 6
-          ? `<div class="app-blocco__posa" style="top:${cima}px;height:${altezza}px" title="posa: sei libera"></div>`
-          : '';
-      }).join('');
+    // fasce vuote toccabili
+    for (let m = inizioMin; m < fineMin; m += 30) {
+      html += `<div class="agenda__vuoto" data-ora="${hhmmDaMinuti(m)}"
+                    style="position:absolute;left:0;right:0;top:${(m - inizioMin) * ppm}px;height:${30 * ppm}px;cursor:pointer"></div>`;
+    }
 
-    html += `
-      <div class="app-blocco${corto ? ' app-blocco--corto' : ''} app-blocco--${esc(a.stato)}"
-           data-id="${esc(a.id)}"
-           style="top:${top}px;height:${alt}px;left:calc(${sinistra}% + 2px);width:calc(${larghezza}% - 6px);border-left-color:${esc(colore)}">
-        ${bandeAttesa}
-        <div class="app-blocco__ora">${ora(daIsoLocale(a.inizio))}${corto ? '' : ` – ${ora(new Date(daIsoLocale(a.inizio).getTime() + a.durata * 60000))}`}</div>
-        <div class="app-blocco__nome">${esc(nome)}</div>
-        ${corto ? '' : `<div class="app-blocco__servizi">${esc(servizi)}</div>`}
-        ${corto || alt < 96 ? '' : `
-          <div class="app-blocco__coda">
-            ${agenda.mostraPrezzi && a.prezzo ? `<span class="pillola pillola--oro">${euro(a.prezzo, valuta)}</span>` : ''}
-            ${a.posaMinuti ? `<span class="pillola">posa ${a.posaMinuti}′</span>` : ''}
-            ${a.serieId ? '<span class="pillola" title="Appuntamento fisso">↻</span>' : ''}
-            ${!a.clienteId && a.clienteNome ? '<span class="pillola" title="Senza scheda cliente">senza scheda</span>' : ''}
-            <span class="segno-invio segno-invio--${a.confermaInviata ? 'ok' : 'no'}"
-                  title="${a.confermaInviata ? 'Conferma inviata' : 'Conferma non ancora inviata'}">${a.confermaInviata ? '✓' : '!'}</span>
-          </div>`}
+    const colonne = disponiInColonne(g.appuntamenti);
+    for (const a of g.appuntamenti) {
+      html += bloccoHtml(a, { ppm, inizioMin, colonne, multi, valuta, mostraPrezzi: agendaCfg.mostraPrezzi });
+    }
+
+    if (!g.appuntamenti.length && !multi) {
+      html += `<div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none">
+        <div style="font-family:var(--serif);font-size:20px;color:var(--bruno-tenue)">Nessun appuntamento</div>
+        <div style="font-size:13.5px;color:var(--bruno-tenue);margin-top:5px">${g.fasce.length ? 'Tocca una fascia oraria per fissarne uno' : ''}</div>
       </div>`;
+    }
+    html += '</div>';
   }
-
-  html += '</div>';
-
-  if (!attivi.length) {
-    html += `<div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none">
-      <div style="font-family:var(--serif);font-size:20px;color:var(--bruno-tenue)">Nessun appuntamento</div>
-      <div style="font-size:13.5px;color:var(--bruno-tenue);margin-top:5px">Tocca una fascia oraria per fissarne uno</div>
-    </div>`;
-  }
+  html += '</div></div>';
 
   contenitore.innerHTML = html;
-
-  // primo disegno: porta in vista l'ora corrente
-  if (isToday(dataCorrente) && !contenitore.dataset.giaScorso) {
-    const adesso = new Date();
-    const m = adesso.getHours() * 60 + adesso.getMinutes();
-    const corpo = document.getElementById('corpo-agenda');
-    corpo.scrollTop = Math.max(0, (m - inizioMin) * ppm - 160);
-    contenitore.dataset.giaScorso = '1';
-  }
 
   const pillolaPonte = document.getElementById('avviso-ponte');
   if (pillolaPonte) pillolaPonte.addEventListener('click', () => {
@@ -3330,8 +3775,60 @@ async function disegna() {
     }, 120);
   });
 
+  // primo disegno: porta in vista l'ora corrente
+  if (giornate.some(g => isToday(g.data)) && !contenitore.dataset.giaScorso) {
+    const adesso = new Date();
+    const m = adesso.getHours() * 60 + adesso.getMinutes();
+    document.getElementById('corpo-agenda').scrollTop = Math.max(0, (m - inizioMin) * ppm - 160);
+    contenitore.dataset.giaScorso = '1';
+  }
+
   clearTimeout(temporizzatoreAdesso);
-  temporizzatoreAdesso = setTimeout(() => { if (isToday(dataCorrente)) disegna(); }, 60000);
+  temporizzatoreAdesso = setTimeout(() => { if (giornate.some(g => isToday(g.data))) disegna(); }, 60000);
+}
+
+/** Un appuntamento disegnato al suo posto nella colonna della sua giornata. */
+function bloccoHtml(a, { ppm, inizioMin, colonne, multi, valuta, mostraPrezzi }) {
+  const inizio = minutiDaHHMM(a.inizio.slice(11));
+  const top = (inizio - inizioMin) * ppm;
+  const alt = Math.max(multi ? 26 : 38, a.durata * ppm - 3);
+  const col = colonne.get(a.id) || { indice: 0, totale: 1 };
+  const larghezza = 100 / col.totale;
+  const sinistra = larghezza * col.indice;
+  const corto = alt < (multi ? 44 : 62);
+  const colore = a._colore || 'var(--oro)';
+
+  const nome = a.nomeVisualizzato || (a.cliente ? nomeCompleto(a.cliente) : 'Cliente eliminata');
+  const servizi = (a.servizi || []).map(s => s.nome).join(', ') || 'Appuntamento';
+
+  // Le attese vanno disegnate dove cadono davvero: in mezzo, non in fondo.
+  const bandeAttesa = store.tratti(a)
+    .filter(t => t.tipo === 'attesa')
+    .map(t => {
+      const cima = t.da * ppm, altezza = (t.a - t.da) * ppm;
+      return altezza > 6
+        ? `<div class="app-blocco__posa" style="top:${cima}px;height:${altezza}px" title="posa: sei libera"></div>`
+        : '';
+    }).join('');
+
+  return `
+    <div class="app-blocco${corto ? ' app-blocco--corto' : ''} app-blocco--${esc(a.stato)}"
+         data-id="${esc(a.id)}"
+         style="top:${top}px;height:${alt}px;left:calc(${sinistra}% + 2px);width:calc(${larghezza}% - 6px);border-left-color:${esc(colore)}">
+      ${bandeAttesa}
+      <div class="app-blocco__ora">${ora(daIsoLocale(a.inizio))}${corto || multi ? '' : ` – ${ora(new Date(daIsoLocale(a.inizio).getTime() + a.durata * 60000))}`}</div>
+      <div class="app-blocco__nome">${esc(nome)}</div>
+      ${corto ? '' : `<div class="app-blocco__servizi">${esc(servizi)}</div>`}
+      ${corto || alt < 96 ? '' : `
+        <div class="app-blocco__coda">
+          ${mostraPrezzi && a.prezzo ? `<span class="pillola pillola--oro">${euro(a.prezzo, valuta)}</span>` : ''}
+          ${a.posaMinuti ? `<span class="pillola">posa ${a.posaMinuti}′</span>` : ''}
+          ${a.serieId ? '<span class="pillola" title="Appuntamento fisso">↻</span>' : ''}
+          ${!a.clienteId && a.clienteNome ? '<span class="pillola" title="Senza scheda cliente">senza scheda</span>' : ''}
+          <span class="segno-invio segno-invio--${a.confermaInviata ? 'ok' : 'no'}"
+                title="${a.confermaInviata ? 'Conferma inviata' : 'Conferma non ancora inviata'}">${a.confermaInviata ? '✓' : '!'}</span>
+        </div>`}
+    </div>`;
 }
 
 /** Appuntamenti sovrapposti affiancati invece che uno sopra l'altro. */
@@ -3677,7 +4174,153 @@ function moduloCreaScheda(appuntamento) {
   });
 }
 
-return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, mostraDettaglio, vaiA };
+/* =========================================================================
+   LE RICHIESTE ARRIVATE DA CLAUDE
+
+   Da fuori si propone, si decide qui. Finché lei non conferma, l'appuntamento
+   non esiste: è la valvola che tiene il tablet come unica fonte di verità.
+   ========================================================================= */
+
+/** Prova a riconoscere i servizi dal testo libero scritto da Claude. */
+async function riconosciServizi(testo) {
+  if (!testo) return { trovati: [], nonCapiti: [] };
+  const tutti = await store.elencoServizi({ soloAttivi: true });
+  const pezzi = String(testo).split(/,| e | \+ |\+/i).map(x => x.trim()).filter(Boolean);
+  const trovati = [], nonCapiti = [];
+  for (const pezzo of pezzi) {
+    const q = pezzo.toLowerCase();
+    const s = tutti.find(x => x.nome.toLowerCase() === q)
+           || tutti.find(x => x.nome.toLowerCase().includes(q) || q.includes(x.nome.toLowerCase()));
+    if (s && !trovati.some(t => t.id === s.id)) trovati.push(s); else if (!s) nonCapiti.push(pezzo);
+  }
+  return { trovati, nonCapiti };
+}
+
+async function pannelloProposte() {
+  const elenco = ponte.proposte();
+  const valuta = cfg.get('incassi').valuta;
+
+  if (!elenco.length) {
+    ui.avviso('Nessuna richiesta in attesa');
+    return;
+  }
+
+  const pezzi = [];
+  for (const p of elenco) {
+    if (p.tipo === 'nota') {
+      pezzi.push(`
+        <div class="carta-proposta" data-proposta="${esc(p.id)}">
+          <div style="display:flex;gap:11px;align-items:flex-start">
+            <span style="font-size:19px">📝</span>
+            <div style="flex:1;min-width:0">
+              <div class="testo-tenue" style="margin-bottom:3px">Promemoria</div>
+              <div style="font-size:15.5px;line-height:1.5">${esc(p.testo)}</div>
+            </div>
+          </div>
+          <div class="carta-proposta__azioni">
+            <button class="btn btn--principale btn--piccolo" data-azione="fatto" data-id="${esc(p.id)}">Ho letto</button>
+          </div>
+        </div>`);
+      continue;
+    }
+
+    const { trovati, nonCapiti } = await riconosciServizi(p.servizi);
+    const durata = trovati.reduce((t, s) => t + s.durata, 0);
+    const prezzo = trovati.reduce((t, s) => t + s.prezzo, 0);
+    const clienti = await store.cercaClienti(p.cliente, 3);
+    const esatta = clienti.find(c => nomeCompleto(c).toLowerCase() === String(p.cliente).toLowerCase()) || clienti[0] || null;
+
+    pezzi.push(`
+      <div class="carta-proposta" data-proposta="${esc(p.id)}">
+        <div class="carta-proposta__quando">${esc(dataEstesa(fromDayKey(p.giorno)))} alle ${esc(p.ora)}</div>
+        <div style="font-size:16.5px;font-weight:700;margin-top:3px">${esc(p.cliente)}</div>
+        <div class="testo-tenue" style="margin-top:2px">
+          ${trovati.length
+            ? esc(trovati.map(s => s.nome).join(', ')) + ` · ${durataUmana(durata)} · ${euro(prezzo, valuta)}`
+            : (p.servizi ? esc(p.servizi) : 'nessun servizio indicato')}
+        </div>
+        ${esatta
+          ? `<div class="testo-tenue" style="margin-top:6px">✓ corrisponde a <strong>${esc(nomeCompleto(esatta))}</strong> in scheda</div>`
+          : `<div class="testo-tenue" style="margin-top:6px">⚠ nessuna scheda con questo nome: verrà fissata con il solo nome</div>`}
+        ${nonCapiti.length ? `<div class="testo-tenue" style="margin-top:4px">⚠ non ho riconosciuto: ${esc(nonCapiti.join(', '))}</div>` : ''}
+        ${p.note ? `<div class="testo-tenue" style="margin-top:6px">Nota: ${esc(p.note)}</div>` : ''}
+        ${(p.avvisi && p.avvisi.length)
+          ? `<div class="avviso-riquadro" style="margin-top:10px"><span>⚠</span><div>${esc(p.avvisi.join('; '))}</div></div>`
+          : ''}
+        <div class="carta-proposta__azioni">
+          <button class="btn btn--verde btn--piccolo" data-azione="conferma" data-id="${esc(p.id)}">Conferma</button>
+          <button class="btn btn--fantasma btn--piccolo" data-azione="modifica" data-id="${esc(p.id)}">Apri e sistema</button>
+          <button class="btn btn--fantasma btn--piccolo" data-azione="scarta" data-id="${esc(p.id)}" style="color:var(--rosso);margin-left:auto">Scarta</button>
+        </div>
+      </div>`);
+  }
+
+  const p = ui.pannello({
+    titolo: 'Richieste in attesa',
+    sottotitolo: 'Arrivate da Claude. Diventano appuntamenti solo se le confermi.',
+    ampio: true,
+    contenuto: pezzi.join('')
+  });
+
+  const proposta = (id) => ponte.proposte().find(x => x.id === id);
+
+  async function creaDaProposta(dati, apriPerModifica) {
+    const { trovati } = await riconosciServizi(dati.servizi);
+    const clienti = await store.cercaClienti(dati.cliente, 3);
+    const cliente = clienti.find(c => nomeCompleto(c).toLowerCase() === String(dati.cliente).toLowerCase()) || clienti[0] || null;
+
+    if (apriPerModifica) {
+      p.chiudi();
+      setTimeout(() => apriNuovo({
+        data: fromDayKey(dati.giorno),
+        oraSuggerita: dati.ora,
+        cliente,
+        serviziIniziali: trovati.map(s => ({ servizioId: s.id, nome: s.nome, durata: s.durata, prezzo: s.prezzo, posaMinuti: s.posaMinuti }))
+      }), 250);
+      return true;
+    }
+
+    const servizi = trovati.map(s => {
+      const t = store.tariffaPerCliente(cliente, s);
+      return { servizioId: s.id, nome: s.nome, durata: t.durata, prezzo: t.prezzo, posaMinuti: t.posaMinuti };
+    });
+    await store.salvaAppuntamento({
+      clienteId: cliente ? cliente.id : null,
+      clienteNome: cliente ? null : dati.cliente,
+      inizio: `${dati.giorno}T${dati.ora}`,
+      servizi,
+      note: [dati.note, dati.servizi && !trovati.length ? `richiesto: ${dati.servizi}` : '']
+        .filter(Boolean).join(' · ')
+    });
+    return true;
+  }
+
+  ui.su(p.elemento, 'click', '[data-azione]', async (e, el) => {
+    const id = el.dataset.id;
+    const dati = proposta(id);
+    if (!dati) return;
+    el.disabled = true;
+
+    if (el.dataset.azione === 'scarta' || el.dataset.azione === 'fatto') {
+      await ponte.chiudiProposta(id, el.dataset.azione === 'fatto' ? 'letta' : 'scartata');
+      ui.avviso(el.dataset.azione === 'fatto' ? 'Promemoria archiviato' : 'Richiesta scartata');
+    } else if (el.dataset.azione === 'modifica') {
+      await creaDaProposta(dati, true);
+      await ponte.chiudiProposta(id, 'aperta');
+      return;
+    } else {
+      await creaDaProposta(dati, false);
+      await ponte.chiudiProposta(id, 'accettata');
+      ui.ok(`Appuntamento fissato per ${dati.cliente}`);
+    }
+
+    const carta = p.elemento.querySelector(`[data-proposta="${id}"]`);
+    if (carta) carta.remove();
+    if (!p.elemento.querySelectorAll('[data-proposta]').length) p.chiudi();
+  });
+}
+
+return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, mostraDettaglio, pannelloProposte, vaiA };
 })();
 
 /* ======================= js/views/clienti.js ======================= */
@@ -4806,10 +5449,18 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     const scelotFuoriFascia = stato.ora && !slot.some(s => s.ora === stato.ora);
 
     if (!slot.length) {
-      zonaOrari.innerHTML = `<div class="avviso-riquadro avviso-riquadro--attenzione">
-        <span>⚠</span><div><strong>Nessun orario libero</strong>
-        La giornata è piena per una durata di ${durataUmana(d)}. Puoi scegliere un altro giorno,
-        oppure indicare l'orario a mano qui sotto.</div></div>
+      const chiuso = !store.giornoAperto(stato.data);
+      const chiusura = store.chiusuraDi(stato.data);
+      zonaOrari.innerHTML = chiuso
+        ? `<div class="avviso-riquadro avviso-riquadro--attenzione">
+             <span>🔒</span><div><strong>${chiusura ? esc(chiusura.motivo || 'Chiusura') : 'Negozio chiuso'}</strong>
+             ${chiusura ? 'In questo periodo il negozio è chiuso.' : 'Questo giorno della settimana il negozio è chiuso.'}
+             Puoi comunque fissare a mano qui sotto.</div></div>`
+        : `<div class="avviso-riquadro avviso-riquadro--attenzione">
+             <span>⚠</span><div><strong>Nessun orario libero</strong>
+             La giornata è piena per una durata di ${durataUmana(d)}. Puoi scegliere un altro giorno,
+             oppure indicare l'orario a mano qui sotto.</div></div>`;
+      zonaOrari.innerHTML +=  `
         <div style="margin-top:11px;display:flex;gap:10px;align-items:center">
           <input class="input" id="ora-manuale" type="time" step="300" style="max-width:170px" value="${esc(stato.ora || '')}">
           <span class="testo-tenue">orario libero</span>
@@ -4862,24 +5513,34 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
   async function aggiornaAvvisi() {
     zonaAvvisi.innerHTML = '';
     if (!stato.ora) return;
-    const modo = cfg.get('agenda').avvisoSovrapposizione;
-    if (modo === 'off') return;
 
     const inizio = `${dayKey(stato.data)}T${stato.ora}`;
+
+    // Fuori orario si può, ma bisogna saperlo: l'app avvisa e non impedisce.
+    const fuori = store.fuoriOrario(inizio, durata());
+    if (fuori) {
+      zonaAvvisi.innerHTML = `<div class="avviso-riquadro avviso-riquadro--attenzione">
+        <span>🕐</span><div><strong>Fuori dall'orario di apertura</strong>
+        ${esc(fuori.motivo)}. Puoi salvare lo stesso.</div></div>`;
+    }
+
+    const modo = cfg.get('agenda').avvisoSovrapposizione;
+    if (modo === 'off') return;
     const c = await store.verificaConflitti(inizio, durata(), { escludiId: appuntamento ? appuntamento.id : null, servizi: serviziOrdinati() });
 
     if (c.attivi.length) {
       const nomi = [];
       for (const a of c.attivi) {
-        const cl = await store.leggiCliente(a.clienteId);
-        nomi.push(`${cl ? nomeCompleto(cl) : 'una cliente'} alle ${a.inizio.slice(11)}`);
+        const cl = a.clienteId ? await store.leggiCliente(a.clienteId) : null;
+        nomi.push(`${store.nomeDiAppuntamento(a, cl)} alle ${a.inizio.slice(11)}`);
       }
-      zonaAvvisi.innerHTML = `<div class="avviso-riquadro">
+      zonaAvvisi.innerHTML += `<div class="avviso-riquadro" style="margin-top:8px">
         <span>⚠</span><div><strong>Si sovrappone a un altro appuntamento</strong>
         ${esc(nomi.join(' · '))}. Puoi salvare comunque se sai di farcela.</div></div>`;
     } else if (c.durantePosa.length) {
-      const cl = await store.leggiCliente(c.durantePosa[0].clienteId);
-      zonaAvvisi.innerHTML = `<div class="avviso-riquadro avviso-riquadro--info">
+      const primo = c.durantePosa[0];
+      const cl = primo.clienteId ? await store.leggiCliente(primo.clienteId) : null;
+      zonaAvvisi.innerHTML += `<div class="avviso-riquadro avviso-riquadro--info" style="margin-top:8px">
         <span>✓</span><div><strong>Cade durante la posa${cl ? ' di ' + esc(nomeCompleto(cl)) : ''}</strong>
         Perfetto: in quel tempo sei libera.</div></div>`;
     }
@@ -5164,15 +5825,16 @@ const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ponte = MOD.ponte;
 const ui = MOD.ui;
-const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, ora: oraDi } = MOD.util;
+const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, dataBreve, dataEstesa, dayKey, fromDayKey, nomeCompleto, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.2.0';
+const VERSIONE_APP = '1.3.0';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
   { id: 'listino',   emoji: '✂️', titolo: 'Listino servizi' },
   { id: 'messaggi',  emoji: '💬', titolo: 'Messaggi WhatsApp' },
   { id: 'agenda',    emoji: '📅', titolo: 'Agenda' },
+  { id: 'orari',     emoji: '🕐', titolo: 'Orari e chiusure' },
   { id: 'cliente',   emoji: '👤', titolo: 'Scheda cliente' },
   { id: 'colore',    emoji: '🎨', titolo: 'Colore e formule' },
   { id: 'incassi',   emoji: '💶', titolo: 'Incassi' },
@@ -5203,7 +5865,7 @@ function inizializza({ suListinoCambiato } = {}) {
 async function disegna() {
   const pannello = document.getElementById('pannello-impostazioni');
   const disegnatori = {
-    negozio: dNegozio, listino: dListino, messaggi: dMessaggi, agenda: dAgenda,
+    negozio: dNegozio, listino: dListino, messaggi: dMessaggi, agenda: dAgenda, orari: dOrari,
     cliente: dCliente, colore: dColore, incassi: dIncassi, ponte: dPonte, backup: dBackup, sistema: dSistema
   };
   pannello.scrollTop = 0;
@@ -5762,6 +6424,199 @@ async function dAgenda(p) {
     el.addEventListener('change', () => document.dispatchEvent(new CustomEvent('impostazioni:cambiate'))));
 }
 
+/* ========================== ORARI E CHIUSURE ========================== */
+
+async function dOrari(p) {
+  const a = cfg.get('agenda');
+  const configurati = store.orariConfigurati();
+  const settimana = configurati ? a.settimana : store.settimanaTipica();
+  const chiusure = [...(a.chiusure || [])].sort((x, y) => (x.da || '').localeCompare(y.da || ''));
+  const oggi = dayKey(new Date());
+
+  const ordineGiorni = [1, 2, 3, 4, 5, 6, 0];   // si parte da lunedì, come un'agenda vera
+
+  p.innerHTML = `
+    <h2>Orari e chiusure</h2>
+    <p class="testo-tenue">Servono a due cose: proporre solo orari in cui il negozio è davvero aperto,
+    e non generare appuntamenti fissi quando siete chiusi. Restano un'indicazione:
+    fuori orario si può fissare lo stesso, l'app avvisa e basta.</p>
+
+    ${!configurati ? `
+      <div class="avviso-riquadro avviso-riquadro--attenzione" style="max-width:900px;margin-bottom:18px">
+        <span>ℹ</span><div><strong>Non hai ancora impostato gli orari</strong>
+        Finora vale la fascia unica ${esc(a.oraInizio)}–${esc(a.oraFine)} per tutti i giorni, festivi compresi.
+        Qui sotto trovi una settimana tipica già pronta: correggila e salva.</div>
+      </div>` : ''}
+
+    <div class="blocco" style="max-width:900px">
+      <h3 class="blocco__titolo">La settimana</h3>
+      <p class="blocco__nota">Lascia vuota la pausa se quel giorno si tira dritto.</p>
+
+      <div class="riga-giorno" style="border-bottom:1.5px solid var(--bordo)">
+        <span></span><span></span>
+        <span class="riga-giorno__intestazione">apre</span>
+        <span class="riga-giorno__intestazione">pausa da</span>
+        <span class="riga-giorno__intestazione">pausa a</span>
+        <span class="riga-giorno__intestazione">chiude</span>
+      </div>
+
+      ${ordineGiorni.map(i => {
+        const g = settimana[i] || { aperto: false, apertura: '09:00', chiusura: '19:00', pausaDa: '', pausaA: '' };
+        return `
+        <div class="riga-giorno${g.aperto ? '' : ' is-chiuso'}" data-giorno="${i}">
+          <span class="riga-giorno__nome">${esc(store.NOMI_GIORNI[i])}</span>
+          <label class="interruttore" style="min-height:0;padding:0;gap:8px">
+            <input type="checkbox" data-campo="aperto" ${g.aperto ? 'checked' : ''}>
+            <span class="interruttore__leva" style="width:42px;height:25px"></span>
+          </label>
+          <input class="input" type="time" step="300" data-campo="apertura" value="${esc(g.apertura)}">
+          <input class="input" type="time" step="300" data-campo="pausaDa" value="${esc(g.pausaDa || '')}">
+          <input class="input" type="time" step="300" data-campo="pausaA" value="${esc(g.pausaA || '')}">
+          <input class="input" type="time" step="300" data-campo="chiusura" value="${esc(g.chiusura)}">
+        </div>`;
+      }).join('')}
+
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn--principale" id="o-salva">Salva gli orari</button>
+        ${configurati ? '<button class="btn btn--fantasma" id="o-annulla">Torna alla fascia unica</button>' : ''}
+      </div>
+    </div>
+
+    <div class="blocco" style="max-width:900px">
+      <h3 class="blocco__titolo">Ferie e chiusure straordinarie</h3>
+      <p class="blocco__nota">Nei periodi indicati l'app non propone orari e non crea appuntamenti fissi.
+      Quelli già in agenda restano: nessuno li cancella di nascosto.</p>
+
+      ${chiusure.length ? chiusure.map((c, i) => {
+        const passata = (c.a || c.da) < oggi;
+        return `
+        <div class="riga-info" style="${passata ? 'opacity:.5' : ''}">
+          <span class="riga-info__etichetta">
+            ${c.a && c.a !== c.da
+              ? `dal ${esc(dataBreve(fromDayKey(c.da)))} al ${esc(dataBreve(fromDayKey(c.a)))}`
+              : esc(dataBreve(fromDayKey(c.da)))}
+            ${c.motivo ? ` — <strong>${esc(c.motivo)}</strong>` : ''}
+            ${passata ? ' (passata)' : ''}
+          </span>
+          <span><button class="btn-icona" data-chiusura-via="${i}" title="Togli">&times;</button></span>
+        </div>`;
+      }).join('') : '<p class="testo-tenue">Nessuna chiusura in programma.</p>'}
+
+      <div class="riga-campi--tre riga-campi" style="margin-top:16px">
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ch-da">Dal</label>
+          <input class="input" id="ch-da" type="date" value="${esc(oggi)}">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ch-a">Al</label>
+          <input class="input" id="ch-a" type="date" value="${esc(oggi)}">
+        </div>
+        <div class="campo" style="margin:0">
+          <label class="campo__etichetta" for="ch-motivo">Motivo</label>
+          <input class="input" id="ch-motivo" placeholder="ferie, corso, ponte…">
+        </div>
+      </div>
+      <button class="btn btn--fantasma" id="ch-aggiungi" style="margin-top:12px">Aggiungi la chiusura</button>
+    </div>
+
+    <div class="blocco" style="max-width:900px">
+      ${leva('o-avviso', 'Avvisa quando fisso fuori orario', a.avvisoFuoriOrario,
+             'Un avviso, non un divieto: alla cliente affezionata si resta aperti')}
+    </div>`;
+
+  collega(p, 'agenda', { 'o-avviso': 'avvisoFuoriOrario' });
+
+  p.querySelector('#o-salva').addEventListener('click', async () => {
+    const nuova = [...settimana];
+    p.querySelectorAll('[data-giorno]').forEach(riga => {
+      const i = Number(riga.dataset.giorno);
+      const leggi = (campo) => riga.querySelector(`[data-campo="${campo}"]`);
+      nuova[i] = {
+        aperto: leggi('aperto').checked,
+        apertura: leggi('apertura').value || '09:00',
+        chiusura: leggi('chiusura').value || '19:00',
+        pausaDa: leggi('pausaDa').value || '',
+        pausaA: leggi('pausaA').value || ''
+      };
+    });
+
+    const storti = nuova.filter(g => g.aperto && g.chiusura <= g.apertura);
+    if (storti.length) { ui.errore('C\'è un giorno che chiude prima di aprire: controlla'); return; }
+
+    await cfg.imposta('agenda', { settimana: nuova });
+    ui.ok('Orari salvati');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
+    disegna();
+  });
+
+  const annulla = p.querySelector('#o-annulla');
+  if (annulla) annulla.addEventListener('click', async () => {
+    const sicuro = await ui.conferma({
+      titolo: 'Tornare alla fascia unica?',
+      testo: `L'app smetterà di distinguere i giorni e userà ${a.oraInizio}–${a.oraFine} per tutti, festivi compresi. Le chiusure straordinarie restano.`,
+      confermaTesto: 'Torna indietro'
+    });
+    if (!sicuro) return;
+    await cfg.imposta('agenda', { settimana: null });
+    ui.ok('Orari azzerati');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
+    disegna();
+  });
+
+  p.querySelector('#ch-aggiungi').addEventListener('click', async () => {
+    const da = p.querySelector('#ch-da').value;
+    const fino = p.querySelector('#ch-a').value || da;
+    const motivo = p.querySelector('#ch-motivo').value.trim();
+    if (!da) { ui.errore('Scegli almeno il giorno di inizio'); return; }
+    if (fino < da) { ui.errore('La fine viene prima dell\'inizio'); return; }
+
+    const nuove = [...(cfg.get('agenda').chiusure || []), { da, a: fino, motivo }];
+    await cfg.imposta('agenda', { chiusure: nuove });
+
+    // Chi ha un appuntamento fisso in quel periodo va avvisata adesso, non dopo.
+    const tocca = [];
+    for (const c of await store.elencoClienti()) {
+      if (!c.ricorrenza || !c.ricorrenza.attiva || !c.ricorrenza.serieId) continue;
+      const occ = await store.occorrenzeSerie(c.ricorrenza.serieId, { daGiorno: da });
+      const dentro = occ.filter(x => x.giorno >= da && x.giorno <= fino);
+      if (dentro.length) tocca.push({ cliente: c, quanti: dentro.length });
+    }
+
+    ui.ok('Chiusura aggiunta');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
+
+    if (tocca.length) {
+      setTimeout(() => ui.pannello({
+        titolo: 'Ci sono appuntamenti fissi in quel periodo',
+        sottotitolo: 'Sono già in agenda: l\'app non li cancella da sola.',
+        contenuto: `<p class="testo-lungo">In questa chiusura cadono appuntamenti fissi già creati:</p>
+          ${tocca.map(t => `<div class="riga-info">
+            <span class="riga-info__etichetta">${esc(nomeCompleto(t.cliente))}</span>
+            <span class="riga-info__valore">${t.quanti} ${t.quanti === 1 ? 'appuntamento' : 'appuntamenti'}</span>
+          </div>`).join('')}
+          <p class="testo-lungo" style="margin-top:14px">Da qui in avanti non ne verranno creati altri in quei giorni.
+          Questi vanno tolti o spostati a mano dall'agenda — così puoi avvisare le clienti mentre lo fai.</p>`,
+        azioni: '<button class="btn btn--principale" data-x="ok">Ho capito</button>'
+      }).elemento.querySelector('[data-x="ok"]').addEventListener('click', () => ui.chiudiPannello()), 500);
+    }
+    disegna();
+  });
+
+  ui.su(p, 'click', '[data-chiusura-via]', async (e, el) => {
+    const elenco = [...(cfg.get('agenda').chiusure || [])]
+      .sort((x, y) => (x.da || '').localeCompare(y.da || ''));
+    elenco.splice(Number(el.dataset.chiusuraVia), 1);
+    await cfg.imposta('agenda', { chiusure: elenco });
+    ui.ok('Chiusura tolta');
+    document.dispatchEvent(new CustomEvent('impostazioni:cambiate'));
+    disegna();
+  });
+
+  p.querySelectorAll('[data-campo="aperto"]').forEach(c => c.addEventListener('change', () => {
+    c.closest('.riga-giorno').classList.toggle('is-chiuso', !c.checked);
+  }));
+}
+
 /* ========================== SCHEDA CLIENTE ========================== */
 
 async function dCliente(p) {
@@ -6021,6 +6876,14 @@ async function dBackup(p) {
     </div>
 
     <div class="blocco">
+      <h3 class="blocco__titolo">☁ Copia automatica sul server</h3>
+      <p class="blocco__nota">Se il ponte è attivo, il tablet manda ogni giorno una copia completa del database
+      al tuo server. Trenta giorni di storia, senza che nessuno debba ricordarsi niente.
+      È quella che salva la situazione se il tablet si rompe o si perde.</p>
+      <div id="b-server" class="testo-tenue">caricamento…</div>
+    </div>
+
+    <div class="blocco">
       <h3 class="blocco__titolo">Copie automatiche interne</h3>
       <p class="blocco__nota">L'app salva da sola una copia prima di ogni aggiornamento che tocca la struttura dei dati.
       Restano dentro il tablet, in un archivio separato: non sostituiscono il backup esterno.</p>
@@ -6033,6 +6896,7 @@ async function dBackup(p) {
     </div>`;
 
   collega(p, 'backup', { 'b-ora': 'oraPromemoria', 'b-giorni': 'giorniAvviso' });
+  disegnaCopieServer(p);
 
   p.querySelector('#b-dati').addEventListener('click', async () => {
     const pacchetto = await db.esporta({ includiFoto: cfg.get('backup').includiFotoNelBackup });
@@ -6074,6 +6938,127 @@ async function dBackup(p) {
       disegna();
     } catch (err) {
       ui.errore(err.message);
+    }
+  });
+}
+
+/** Il riquadro delle copie conservate sul server. */
+async function disegnaCopieServer(p) {
+  const zona = p.querySelector('#b-server');
+  if (!zona) return;
+  const b = cfg.get('ponte');
+
+  if (!ponte.configurato()) {
+    zona.innerHTML = `<p class="testo-tenue">Il ponte non è configurato: senza server non c'è dove mandare le copie.
+      Si imposta in <strong>Telefono e Claude</strong>.</p>`;
+    return;
+  }
+
+  zona.innerHTML = `
+    ${leva('b-server-attivo', 'Manda una copia al giorno', b.backupSuServer,
+           'Se spento, sul server resta solo il riassunto per Claude, senza i dati completi')}
+    <div id="b-copie" style="margin-top:12px" class="testo-tenue">controllo le copie sul server…</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+      <button class="btn btn--fantasma" id="b-invia-ora">Manda una copia adesso</button>
+      <button class="btn btn--fantasma" id="b-ripristina-server">Ripristina dal server</button>
+      <button class="btn btn--fantasma" id="b-svuota-server" style="color:var(--rosso);margin-left:auto">Svuota l'archivio</button>
+    </div>`;
+
+  collega(p, 'ponte', { 'b-server-attivo': 'backupSuServer' });
+
+  const esito = await ponte.copieSulServer();
+  const elenco = p.querySelector('#b-copie');
+  if (!esito.ok) {
+    elenco.innerHTML = `<span style="color:var(--rosso)">Non riesco a leggere l'archivio: ${esc(esito.messaggio || 'errore')}</span>`;
+  } else if (!esito.copie.length) {
+    elenco.innerHTML = 'Nessuna copia sul server per ora. La prima parte alla prossima sincronizzazione.';
+  } else {
+    const ultima = esito.copie[0];
+    const mb = ultima.byte ? (ultima.byte / 1048576).toFixed(2) + ' MB' : '';
+    elenco.innerHTML = `<strong style="color:var(--bruno)">${esito.copie.length}
+      ${esito.copie.length === 1 ? 'copia conservata' : 'copie conservate'}</strong>
+      — la più recente è del ${esc(dataBreve(fromDayKey(ultima.giorno)))}${mb ? ` (${mb})` : ''}.
+      Si conservano gli ultimi ${esito.conservate} giorni.`;
+  }
+
+  p.querySelector('#b-invia-ora').addEventListener('click', async (e) => {
+    e.target.disabled = true; e.target.textContent = 'Invio…';
+    const r = await ponte.inviaBackupGiornaliero({ forza: true });
+    r.ok ? ui.ok('Copia inviata al server') : ui.errore(r.messaggio);
+    disegna();
+  });
+
+  p.querySelector('#b-svuota-server').addEventListener('click', async () => {
+    const sicuro = await ui.conferma({
+      titolo: 'Svuotare l\'archivio sul server?',
+      testo: 'Tutte le copie conservate sul server verranno cancellate. I dati sul tablet non vengono toccati, ma resterai senza copie fuori sede finché non ne parte una nuova.',
+      confermaTesto: 'Svuota', pericolo: true
+    });
+    if (!sicuro) return;
+    await ponte.svuotaCopieSulServer();
+    await cfg.imposta('ponte', { ultimoBackupServer: null });
+    ui.ok('Archivio svuotato');
+    disegna();
+  });
+
+  p.querySelector('#b-ripristina-server').addEventListener('click', () => moduloRipristinoServer());
+}
+
+/** Scegliere il giorno da cui tornare indietro. */
+async function moduloRipristinoServer() {
+  const esito = await ponte.copieSulServer();
+  if (!esito.ok || !esito.copie.length) {
+    ui.errore(esito.ok ? 'Non ci sono copie sul server' : (esito.messaggio || 'server non raggiungibile'));
+    return;
+  }
+
+  const pannello = ui.pannello({
+    titolo: 'Ripristina dal server',
+    sottotitolo: 'Scegli il giorno da cui vuoi tornare indietro.',
+    contenuto: `
+      <div class="avviso-riquadro" style="margin-bottom:14px">
+        <span>⚠</span><div><strong>Tutto quello che c'è adesso sul tablet verrà sostituito</strong>
+        con i dati di quel giorno. Se hai lavorato dopo, quel lavoro si perde.
+        Prima di procedere l'app scarica una copia di quello che c'è ora.</div>
+      </div>
+      ${esito.copie.map(c => {
+        const n = c.conteggi || {};
+        return `<div class="riga-cliente" data-giorno="${esc(c.giorno)}" style="border-radius:var(--raggio-s)">
+          <div class="pastiglia" style="background:var(--crema-scura);color:var(--bruno-medio);font-size:13px">
+            ${esc(String(Number(c.giorno.slice(8))))}</div>
+          <div style="min-width:0;flex:1">
+            <div class="riga-cliente__nome">${esc(dataEstesa(fromDayKey(c.giorno)))}</div>
+            <div class="riga-cliente__dettaglio">
+              ${n.clienti || 0} clienti · ${n.appuntamenti || 0} appuntamenti${c.byte ? ` · ${(c.byte / 1048576).toFixed(2)} MB` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}`
+  });
+
+  ui.su(pannello.elemento, 'click', '[data-giorno]', async (e, el) => {
+    const giorno = el.dataset.giorno;
+    const sicuro = await ui.conferma({
+      titolo: `Tornare al ${dataBreve(fromDayKey(giorno))}?`,
+      testo: 'I dati attuali del tablet verranno sostituiti. Prima viene scaricata una copia di quello che c\'è ora, così nulla è davvero perduto.',
+      confermaTesto: 'Ripristina', pericolo: true
+    });
+    if (!sicuro) return;
+
+    try {
+      // Rete di sicurezza: la situazione attuale finisce in un file prima di toccare niente.
+      const prima = await db.esporta({ includiFoto: false });
+      scaricaFile(nomeFileConData('charme-prima-del-ripristino', 'json'), JSON.stringify(prima));
+
+      const pacchetto = await ponte.scaricaCopia(giorno);
+      const riepilogo = await db.ripristina(pacchetto);
+      await cfg.carica();
+      pannello.chiudi();
+      ui.ok('Ripristino completato: ' + Object.entries(riepilogo).map(([k, v]) => `${v} ${k}`).join(', '));
+      document.dispatchEvent(new CustomEvent('dati:cambiati'));
+      setTimeout(() => location.reload(), 1800);
+    } catch (err) {
+      ui.errore('Ripristino non riuscito: ' + err.message);
     }
   });
 }
