@@ -939,6 +939,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .linea-storico--futura .linea-storico__data { color: var(--oro-scuro); font-weight: 600; }
 
+/* --- scheda cliente: storico e prossimi affiancati --- */
+.scheda-colonne { display: grid; grid-template-columns: 1fr; gap: 0 26px; margin-top: 18px; }
+.scheda-colonne__col { min-width: 0; }
+.scheda-colonne__titolo { font-size: 16px; margin: 0 0 2px; }
+.scheda-colonne__coda {
+  font-family: var(--sans); font-size: 12.5px; font-weight: 500; color: var(--bruno-tenue);
+}
+.scheda-colonne__nota { margin-bottom: 2px; }
+@media (min-width: 900px) {
+  .pannello--ampio .scheda-colonne { grid-template-columns: 1fr 1fr; }
+  .pannello--ampio .scheda-colonne__col + .scheda-colonne__col {
+    border-left: 1px solid var(--bordo-tenue); padding-left: 26px;
+  }
+  /* ciascuna colonna scorre per conto suo: le due intestazioni restano ferme */
+  .pannello--ampio .scheda-colonne__elenco { max-height: 44vh; overflow-y: auto; padding-right: 6px; }
+}
+
 </style>
 </head>
 <body>
@@ -4644,14 +4661,25 @@ async function scheda(id) {
         <div class="blocco__titolo" style="font-size:15px;margin-bottom:6px">Note</div>
         <p class="testo-lungo" style="font-size:14.5px">${esc(c.note)}</p></div>` : ''}
 
-      ${prossimi ? `<h3 style="font-size:16px;margin:18px 0 4px">Prossimi appuntamenti
-        <span class="testo-tenue" style="font-family:var(--sans);font-size:12.5px;font-weight:500">· ancora da fare</span></h3>
-        <p class="testo-tenue" style="margin-bottom:2px">Tocca una riga per aprirla o spostarla.</p>${prossimi}` : ''}
-
-      <h3 style="font-size:16px;margin:24px 0 4px">Storico
-        <span class="testo-tenue" style="font-family:var(--sans);font-size:12.5px;font-weight:500">· già fatti</span></h3>
-      <p class="testo-tenue" style="margin-bottom:2px">Tocca una riga per annotare com'è andata o per rifissare gli stessi servizi.</p>
-      ${storico}
+      <!-- Storico a sinistra, prossimi a destra: si vedono insieme, senza
+           dover scorrere per passare dagli uni agli altri. -->
+      <div class="scheda-colonne">
+        <div class="scheda-colonne__col">
+          <h3 class="scheda-colonne__titolo">Storico
+            <span class="scheda-colonne__coda">· già fatti</span></h3>
+          <p class="testo-tenue scheda-colonne__nota">Tocca una riga per annotare com'è andata o per rifissare gli stessi servizi.</p>
+          <div class="scheda-colonne__elenco">${storico}</div>
+        </div>
+        <div class="scheda-colonne__col">
+          <h3 class="scheda-colonne__titolo">Prossimi appuntamenti
+            <span class="scheda-colonne__coda">· ancora da fare</span></h3>
+          <p class="testo-tenue scheda-colonne__nota">${prossimi
+            ? 'Tocca una riga per aprirla o spostarla.'
+            : 'Quando le fissi qualcosa compare qui.'}</p>
+          <div class="scheda-colonne__elenco">${prossimi
+            || '<p class="testo-tenue" style="padding:14px 0">Nessun appuntamento in programma.</p>'}</div>
+        </div>
+      </div>
     `,
     azioni: `
       <button class="btn btn--fantasma" data-x="elimina" style="margin-right:auto;color:var(--rosso)">Elimina</button>
@@ -6070,7 +6098,7 @@ const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, dataBreve, dataEstesa, dayKey, fromDayKey, nomeCompleto, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.4.0';
+const VERSIONE_APP = '1.4.1';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
