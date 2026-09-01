@@ -41,6 +41,14 @@
   --bordo:         #E7DCC9;
   --bordo-tenue:   #F0E8DB;
 
+  /* arancione spento per gli impegni personali, grigio per quello che è già
+     stato fatto: due cose che devono distinguersi senza gridare */
+  --arancio:       #B87C44;
+  --arancio-scuro: #8E5B2A;
+  --arancio-tenue: #F7E9D8;
+  --grigio:        #B7AFA3;
+  --grigio-tenue:  #EFEBE4;
+
   /* misure */
   --raggio:        14px;
   --raggio-s:       9px;
@@ -939,6 +947,157 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .linea-storico--futura .linea-storico__data { color: var(--oro-scuro); font-weight: 600; }
 
+/* =============================================================================
+   1.5 — CALENDARIO, IMPEGNI, TITOLO DEL GIORNO, PROMEMORIA, SPECCHIETTO
+   ========================================================================== */
+
+/* --- l'ora dell'appuntamento si legge da lontano --- */
+.app-blocco__ora { color: var(--bruno); font-weight: 700; font-size: 12.5px; }
+
+/* --- il tasto calendario nella testata --- */
+.barra-giorno__calendario { position: relative; overflow: hidden; }
+.barra-giorno__calendario input[type="date"] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: 0; padding: 0;
+}
+
+/* --- il tasto degli impegni: si vede, ma non ruba la scena a "+ Appuntamento" --- */
+.btn--impegno {
+  min-height: 40px; padding: 0 15px; font-size: 14px; border-radius: var(--raggio-s);
+  background: var(--arancio-tenue); color: var(--arancio-scuro);
+  border: 1.5px solid rgba(184,124,68,.38);
+}
+.btn--impegno:hover { background: #F3E2CE; }
+.btn--impegno svg { width: 17px; height: 17px; }
+
+/* --- colori dei blocchi ---
+   L'ordine conta: il fisso e l'impegno colorano la giornata viva, il concluso
+   li copre entrambi perché una giornata passata è roba fatta e non deve
+   chiamare l'occhio. */
+.app-blocco--fisso { background: var(--salvia-tenue); }
+.app-blocco--impegno {
+  background: var(--arancio-tenue);
+  border-left: 5px solid var(--arancio);
+  border-color: rgba(184,124,68,.34);
+}
+.app-blocco--impegno .app-blocco__nome { color: var(--arancio-scuro); }
+.app-blocco--impegno .app-blocco__servizi { color: var(--arancio-scuro); opacity: .8; }
+.app-blocco__segno { color: var(--arancio); }
+.app-blocco--concluso {
+  background: var(--grigio-tenue);
+  border-left-color: var(--grigio) !important;
+  color: var(--bruno-tenue);
+}
+.app-blocco--concluso .app-blocco__ora { color: var(--bruno-tenue); font-weight: 600; }
+.app-blocco--concluso .app-blocco__nome { color: var(--bruno-medio); }
+
+.pillola--nota { background: var(--arancio-tenue); color: var(--arancio-scuro); }
+.app-blocco__nota { font-size: 12px; }
+
+/* --- il titolo della giornata --- */
+.titoli-giorno { display: grid; gap: 8px; margin: 0 0 10px 62px; }
+.titolo-giorno {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: var(--raggio-s);
+  border: 1px dashed var(--bordo); background: transparent;
+  transition: background .16s, border-color .16s;
+}
+.titolo-giorno.is-pieno {
+  background: var(--oro-tenue); border-style: solid;
+  border-color: rgba(176,141,87,.42);
+}
+.titolo-giorno__segno { font-size: 13px; opacity: .45; flex-shrink: 0; }
+.titolo-giorno.is-pieno .titolo-giorno__segno { opacity: 1; }
+.titolo-giorno__campo {
+  flex: 1; min-width: 0; min-height: 34px;
+  border: 0; background: transparent; padding: 0;
+  font-size: 14.5px; font-weight: 600; color: var(--bruno);
+}
+.titolo-giorno__campo::placeholder { font-weight: 400; color: var(--bruno-tenue); }
+.titolo-giorno__campo:focus { outline: none; }
+.titolo-giorno:focus-within { border-color: var(--oro); border-style: solid; }
+
+/* --- il riquadro di un promemoria --- */
+.riquadro-nota {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 14px; border-radius: var(--raggio-s);
+  background: var(--arancio-tenue); border: 1px solid rgba(184,124,68,.32);
+  font-size: 14.5px; line-height: 1.45; color: #5C3F22;
+}
+
+/* --- il campo orario scritto da noi --- */
+.input--ora { max-width: 110px; font-variant-numeric: tabular-nums; text-align: center; letter-spacing: .04em; }
+.input--ora.is-storta { border-color: var(--rosso); background: var(--rosso-tenue); }
+
+/* --- lo specchietto degli orari vicini --- */
+.specchietto {
+  border: 1px solid var(--bordo); border-radius: var(--raggio-s);
+  background: var(--superficie); padding: 11px 13px 13px;
+}
+.specchietto__testa {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--bruno-tenue); margin-bottom: 16px;
+}
+.specchietto__scala { position: relative; height: 13px; margin-bottom: 2px; }
+.specchietto__corsie { position: relative; }
+.specchietto__tacca {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--bordo-tenue);
+}
+.specchietto__tacca--ora { background: var(--bordo); }
+.specchietto__etichetta {
+  position: absolute; top: -14px; transform: translateX(-50%);
+  font-size: 10.5px; color: var(--bruno-tenue); font-variant-numeric: tabular-nums;
+}
+.specchietto__barra {
+  position: absolute; height: 22px; border-radius: 5px; overflow: hidden;
+  background: var(--crema-scura); border: 1px solid var(--bordo);
+  display: flex; align-items: center; padding: 0 6px;
+}
+.specchietto__barra--impegno { background: var(--arancio-tenue); border-color: rgba(184,124,68,.4); }
+.specchietto__barra--nuovo {
+  background: var(--oro); border-color: var(--oro-scuro); color: #fff;
+  box-shadow: 0 1px 5px rgba(140,108,60,.35);
+}
+.specchietto__posa {
+  position: absolute; top: 0; bottom: 0;
+  background: repeating-linear-gradient(135deg,
+    rgba(255,255,255,.85) 0 5px, rgba(255,255,255,.35) 5px 10px);
+}
+.specchietto__barra--nuovo .specchietto__posa {
+  background: repeating-linear-gradient(135deg,
+    rgba(255,255,255,.55) 0 5px, rgba(255,255,255,.16) 5px 10px);
+}
+.specchietto__nome {
+  position: relative; font-size: 11.5px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.specchietto__verdetto {
+  margin: 0 0 16px; font-size: 13px; font-weight: 600;
+  padding: 8px 11px; border-radius: var(--raggio-s); line-height: 1.4;
+}
+.specchietto__verdetto--si { background: var(--salvia-tenue); color: #4C6146; }
+.specchietto__verdetto--forse { background: var(--oro-tenue); color: var(--oro-scuro); }
+.specchietto__verdetto--no { background: var(--rosso-tenue); color: var(--rosso); }
+.specchietto__legenda {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 9px;
+  font-size: 11.5px; color: var(--bruno-tenue);
+}
+.specchietto__legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.specchietto__campione {
+  width: 15px; height: 10px; border-radius: 3px; display: inline-block;
+  border: 1px solid var(--bordo);
+}
+.specchietto__campione--altri { background: var(--crema-scura); }
+.specchietto__campione--posa {
+  background: repeating-linear-gradient(135deg, #E3D8C6 0 4px, #FBF8F3 4px 8px);
+}
+.specchietto__campione--nuovo { background: var(--oro); border-color: var(--oro-scuro); }
+
+@media (max-width: 820px) {
+  .titoli-giorno { margin-left: 52px; }
+}
+
 /* --- scheda cliente: storico e prossimi affiancati --- */
 .scheda-colonne { display: grid; grid-template-columns: 1fr; gap: 0 26px; margin-top: 18px; }
 .scheda-colonne__col { min-width: 0; }
@@ -1016,8 +1175,19 @@ button, input, select, textarea { font: inherit; color: inherit; }
         </button>
         <div class="barra-giorno__data" id="etichetta-giorno"></div>
         <button class="btn btn--fantasma btn--piccolo" id="vai-oggi" type="button">Oggi</button>
+        <!-- Il calendario vero e proprio: si tocca l'icona e si sceglie la data. -->
+        <label class="btn-icona barra-giorno__calendario" id="scegli-data" title="Vai a una data" aria-label="Vai a una data">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/>
+          </svg>
+          <input type="date" id="data-scelta" aria-label="Scegli una data">
+        </label>
         <button class="btn-icona" id="cerca-scheda" type="button" aria-label="Cerca una scheda cliente" title="Cerca una scheda cliente">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <button class="btn btn--impegno" id="btn-impegno" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Impegno
         </button>
         <div class="barra-giorno__spazio"></div>
         <div class="riassunto" id="riassunto-giorno"></div>
@@ -1403,10 +1573,21 @@ const MIGRAZIONI = [
       }
     }
   }
+  ,{
+    versione: 3,
+    descrizione: 'Titolo della giornata: un archivio nuovo, niente di esistente viene toccato',
+    applica(db) {
+      // Solo un archivio in più. Gli altri restano dove sono, con dentro
+      // quello che avevano: aggiungere non è modificare.
+      if (!db.objectStoreNames.contains('giorni')) {
+        db.createObjectStore('giorni', { keyPath: 'giorno' });
+      }
+    }
+  }
 ];
 
 const VERSIONE_DATI = MIGRAZIONI[MIGRAZIONI.length - 1].versione;
-const STORE = ['impostazioni','categorie','servizi','clienti','appuntamenti','formule','foto'];
+const STORE = ['impostazioni','categorie','servizi','clienti','appuntamenti','giorni','formule','foto'];
 
 let _db = null;
 
@@ -2136,6 +2317,37 @@ function conferma({ titolo, testo, confermaTesto = 'Conferma', annullaTesto = 'A
   });
 }
 
+/**
+ * Chiede una riga di testo. Restituisce la stringa scritta, oppure null se
+ * si annulla — così chi chiama distingue «l'ha svuotata» da «ha rinunciato».
+ */
+function chiediTesto({ titolo, sottotitolo = '', valore = '', segnaposto = '', aiuto = '', confermaTesto = 'Salva', lunghezzaMax = 120 }) {
+  return new Promise(risolvi => {
+    let deciso = false;
+    const p = pannello({
+      titolo,
+      sottotitolo,
+      contenuto: `<div class="campo" style="margin-bottom:0">
+          <input class="input" id="testo-chiesto" maxlength="${Number(lunghezzaMax) || 120}" data-fuoco
+                 value="${esc(valore || '')}" placeholder="${esc(segnaposto)}">
+          ${aiuto ? `<p class="campo__aiuto">${esc(aiuto)}</p>` : ''}
+        </div>`,
+      azioni: `<button class="btn btn--fantasma" data-x="no">Annulla</button>
+               <button class="btn btn--principale" data-x="si">${esc(confermaTesto)}</button>`,
+      alChiudere: () => { if (!deciso) risolvi(null); }
+    });
+    const campo = p.elemento.querySelector('#testo-chiesto');
+    const conferma = () => {
+      deciso = true;
+      risolvi(campo.value.trim());
+      p.chiudi();
+    };
+    p.elemento.querySelector('[data-x="no"]').addEventListener('click', () => p.chiudi());
+    p.elemento.querySelector('[data-x="si"]').addEventListener('click', conferma);
+    campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') conferma(); });
+  });
+}
+
 /* ---------- utilità DOM ---------- */
 
 function el(html) {
@@ -2154,6 +2366,68 @@ function su(radice, evento, selettore, gestore) {
   });
 }
 
+/* ---------- campo orario, sempre a 24 ore ----------
+   Il campo orario di Android segue l'orologio del tablet: se quello è a 12 ore
+   escono AM/PM e non c'è modo di impedirlo dall'app. Questo è scritto qui e
+   quindi è a 24 ore ovunque e sempre, qualunque tablet ci sia sotto.
+   Si può battere 1430, 14.30, 14:30, 930: tutto diventa 14:30 e 09:30. */
+
+/** Un orario scritto in qualunque modo → 'HH:MM', oppure '' se non si capisce. */
+function normalizzaOra(testo) {
+  const grezzo = String(testo == null ? '' : testo).trim();
+  if (!grezzo) return '';
+  const cifre = grezzo.replace(/\D/g, '');
+  let ore, minuti;
+  if (cifre.length <= 2) { ore = Number(cifre); minuti = 0; }
+  else if (cifre.length === 3) { ore = Number(cifre.slice(0, 1)); minuti = Number(cifre.slice(1)); }
+  else { ore = Number(cifre.slice(0, 2)); minuti = Number(cifre.slice(2, 4)); }
+  if (!Number.isFinite(ore) || !Number.isFinite(minuti)) return '';
+  if (ore > 23 || minuti > 59) return '';
+  return `${String(ore).padStart(2, '0')}:${String(minuti).padStart(2, '0')}`;
+}
+
+/** L'HTML di un campo orario. Da legare poi con legaCampiOra(). */
+function campoOra(id, valore = '', { stile = '', segnaposto = '--:--', etichetta = '' } = {}) {
+  return `<input class="input input--ora" id="${esc(id)}" type="text"
+    inputmode="numeric" autocomplete="off" maxlength="5"
+    value="${esc(normalizzaOra(valore))}" placeholder="${esc(segnaposto)}"
+    ${etichetta ? `aria-label="${esc(etichetta)}"` : ''}
+    ${stile ? `style="${esc(stile)}"` : ''}>`;
+}
+
+/**
+ * Rende vivi tutti i campi orario dentro una radice: formattazione mentre si
+ * scrive, normalizzazione quando si esce, evento 'change' come un campo vero.
+ * Chiamarla dopo ogni innerHTML che contenga campi orario.
+ */
+function legaCampiOra(radice) {
+  radice.querySelectorAll('.input--ora:not([data-ora-legata])').forEach(campo => {
+    campo.dataset.oraLegata = '1';
+
+    campo.addEventListener('input', () => {
+      // Solo cifre e i due punti, e i due punti li mettiamo noi al posto giusto.
+      const cifre = campo.value.replace(/\D/g, '').slice(0, 4);
+      campo.value = cifre.length > 2 ? `${cifre.slice(0, 2)}:${cifre.slice(2)}` : cifre;
+    });
+
+    const sistema = () => {
+      const prima = campo.value;
+      const dopo = normalizzaOra(prima);
+      if (!prima.trim()) { campo.value = ''; campo.classList.remove('is-storta'); return; }
+      if (!dopo) { campo.classList.add('is-storta'); return; }
+      campo.classList.remove('is-storta');
+      campo.value = dopo;
+    };
+
+    // Solo il riordino di quello che si vede: chi legge il campo passa comunque
+    // da normalizzaOra(), così non dipende da quando è scattato quale evento.
+    campo.addEventListener('blur', sistema);
+    campo.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); campo.blur(); }
+    });
+  });
+}
+
 function statoVuoto({ icona = '', titolo, testo = '', azione = '' }) {
   return `
     <div class="stato-vuoto">
@@ -2164,7 +2438,7 @@ function statoVuoto({ icona = '', titolo, testo = '', azione = '' }) {
     </div>`;
 }
 
-return { avviso, chiudiPannello, chiudiTuttiIPannelli, conferma, el, errore, ok, pannello, statoVuoto, su, svuota };
+return { avviso, campoOra, chiediTesto, chiudiPannello, chiudiTuttiIPannelli, conferma, el, errore, legaCampiOra, normalizzaOra, ok, pannello, statoVuoto, su, svuota };
 })();
 
 /* ======================= js/whatsapp.js ======================= */
@@ -2334,6 +2608,9 @@ async function salvaCliente(dati) {
     ricorrenza: (precedente && precedente.ricorrenza) || ricorrenzaVuota(),
     serviziAbituali: (precedente && precedente.serviziAbituali) || [],
     prezzi: (precedente && precedente.prezzi) || {},
+    // Il promemoria per la prossima volta — «avanza 20 euro» — non passa da
+    // questo modulo: va conservato, o una modifica al nome se lo porterebbe via.
+    notaProssima: (precedente && precedente.notaProssima) || '',
     id: dati.id || uid('cli'),
     nome: (dati.nome || '').trim(),
     cognome: (dati.cognome || '').trim(),
@@ -2523,9 +2800,14 @@ async function salvaAppuntamento(dati) {
 
   const app = {
     id: dati.id || uid('app'),
-    clienteId: dati.clienteId || null,
+    // Un impegno personale — il dentista, una consegna, una pausa — è un
+    // appuntamento senza cliente con un contrassegno. Passando di qui eredita
+    // tutto quello che già funziona: griglia, conflitti, orari liberi.
+    tipo: dati.tipo === 'impegno' ? 'impegno' : 'appuntamento',
+    titolo: dati.tipo === 'impegno' ? (dati.titolo || '').trim() || 'Impegno' : null,
+    clienteId: dati.tipo === 'impegno' ? null : (dati.clienteId || null),
     // Chi non ha ancora una scheda vive con il solo nome, fin quando non gliela si crea.
-    clienteNome: dati.clienteId ? null : (dati.clienteNome || '').trim() || null,
+    clienteNome: (dati.tipo === 'impegno' || dati.clienteId) ? null : (dati.clienteNome || '').trim() || null,
     giorno: inizio.slice(0, 10),
     inizio,
     durata,
@@ -2573,13 +2855,18 @@ async function concludiGiorniPassati() {
 
 /** Il nome da mostrare, che la cliente abbia una scheda oppure no. */
 function nomeDiAppuntamento(appuntamento, cliente) {
+  if (appuntamento && appuntamento.tipo === 'impegno') return appuntamento.titolo || 'Impegno';
   if (cliente) return nomeCompleto(cliente);
   if (appuntamento && appuntamento.clienteNome) return appuntamento.clienteNome;
   return 'cliente eliminata';
 }
 
+function eImpegno(appuntamento) {
+  return !!appuntamento && appuntamento.tipo === 'impegno';
+}
+
 function senzaScheda(appuntamento) {
-  return !appuntamento.clienteId && !!appuntamento.clienteNome;
+  return !appuntamento.clienteId && !!appuntamento.clienteNome && !eImpegno(appuntamento);
 }
 
 /**
@@ -2836,15 +3123,21 @@ async function promemoriaDaInviare(data = addDays(new Date(), 1)) {
 /* ---------- riepiloghi ---------- */
 
 async function riepilogoGiorno(data) {
-  const appuntamenti = (await appuntamentiDelGiorno(data)).filter(a => a.stato !== 'annullato');
+  const tutto = (await appuntamentiDelGiorno(data)).filter(a => a.stato !== 'annullato');
+  // Gli impegni personali occupano tempo ma non sono clienti e non portano
+  // incasso: contarli fra le clienti falserebbe la giornata.
+  const impegni = tutto.filter(eImpegno);
+  const appuntamenti = tutto.filter(a => !eImpegno(a));
   const conclusi = appuntamenti.filter(a => a.stato === 'concluso');
   return {
     totale: appuntamenti.length,
+    impegni: impegni.length,
     conclusi: conclusi.length,
     incassato: conclusi.reduce((s, a) => s + (Number(a.prezzo) || 0), 0),
     previsto: appuntamenti.filter(a => a.stato !== 'assente')
                           .reduce((s, a) => s + (Number(a.prezzo) || 0), 0),
-    minutiOccupati: appuntamenti.reduce((s, a) => s + Math.max(0, a.durata - (a.posaMinuti || 0)), 0)
+    minutiOccupati: appuntamenti.reduce((s, a) => s + Math.max(0, a.durata - (a.posaMinuti || 0)), 0),
+    minutiImpegni: impegni.reduce((s, a) => s + (Number(a.durata) || 0), 0)
   };
 }
 
@@ -2891,6 +3184,24 @@ function tariffaPerCliente(cliente, servizio) {
 function servizioPerCliente(cliente, servizio) {
   const t = tariffaPerCliente(cliente, servizio);
   return { ...servizio, ...t };
+}
+
+/* ---------- il promemoria per la prossima volta ----------
+   «Avanza 20 euro», «piega gratis». Sta sulla cliente e non sull'appuntamento:
+   se quell'appuntamento salta, i 20 euro non si perdono con lui. Resta finché
+   non viene segnato fatto. */
+
+async function scriviNotaProssima(clienteId, testo) {
+  const c = await leggiCliente(clienteId);
+  if (!c) return null;
+  const aggiornato = { ...c, notaProssima: (testo || '').trim(), modificatoIl: new Date().toISOString() };
+  await db.salva('clienti', aggiornato);
+  document.dispatchEvent(new CustomEvent('dati:cambiati', { detail: { tipo: 'cliente', id: clienteId } }));
+  return aggiornato;
+}
+
+function notaProssimaDi(cliente) {
+  return cliente && cliente.notaProssima ? cliente.notaProssima : '';
 }
 
 async function serviziAbitualiDi(cliente) {
@@ -3137,6 +3448,32 @@ function settimanaTipica(apertura = '09:00', chiusura = '19:00') {
   }));
 }
 
+/* ---------- il titolo della giornata ----------
+   Una riga sola per ogni data: «consegna colore», «Marta richiama».
+   Vive in un archivio suo, aggiunto senza toccare gli altri. */
+
+async function titoloDelGiorno(data) {
+  const g = typeof data === 'string' ? data : dayKey(data);
+  const riga = await db.leggi('giorni', g);
+  return riga && riga.titolo ? riga.titolo : '';
+}
+
+/** Titoli di più giornate in un colpo solo: serve alla vista su più giorni. */
+async function titoliDeiGiorni(chiavi) {
+  const out = {};
+  for (const g of chiavi) out[g] = await titoloDelGiorno(g);
+  return out;
+}
+
+async function salvaTitoloDelGiorno(data, titolo) {
+  const g = typeof data === 'string' ? data : dayKey(data);
+  const pulito = (titolo || '').trim();
+  // Svuotare il campo cancella la riga: l'archivio non si riempie di vuoti.
+  if (!pulito) await db.elimina('giorni', g);
+  else await db.salva('giorni', { giorno: g, titolo: pulito, modificatoIl: new Date().toISOString() });
+  return pulito;
+}
+
 /**
  * L'apertura extra fissata su quel giorno, se c'è.
  * È la regola più specifica di tutte — riguarda un giorno solo — e per questo
@@ -3267,7 +3604,7 @@ function fuoriOrario(inizioIso, durata) {
   return { motivo: `l'orario di quel giorno è ${fasce.map(f => `${hhmmDaMinuti(f.da)}–${hhmmDaMinuti(f.a)}`).join(' e ')}` };
 }
 
-return { NOMI_GIORNI, ORIZZONTE_GIORNI, aperturaDi, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, chiusuraDi, chiusuraScrittaDi, concludiGiorniPassati, creaSchedaDaAppuntamento, durataDaServizi, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, estremiGriglia, fasceDelGiorno, fermaSerie, finestreAttesa, finestreLavoro, fuoriOrario, generaOccorrenze, giornataCompleta, giornoAperto, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, occorrenzeSerie, orariConfigurati, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, serviziProposti, servizioPerCliente, settimanaTipica, spostaSerie, storicoCliente, tariffaPerCliente, tratti, verificaConflitti };
+return { NOMI_GIORNI, ORIZZONTE_GIORNI, aperturaDi, applicaAumento, appuntamentiDelGiorno, appuntamentiIntervallo, aumentaPrezzi, cambiaStato, cercaClienti, chiusuraDi, chiusuraScrittaDi, concludiGiorniPassati, creaSchedaDaAppuntamento, durataDaServizi, eImpegno, elencoCategorie, elencoClienti, elencoServizi, eliminaAppuntamento, eliminaCategoria, eliminaCliente, eliminaServizio, estremiGriglia, fasceDelGiorno, fermaSerie, finestreAttesa, finestreLavoro, fuoriOrario, generaOccorrenze, giornataCompleta, giornoAperto, leggiAppuntamento, leggiCliente, listinoPerCategoria, nomeDiAppuntamento, notaProssimaDi, occorrenzeSerie, orariConfigurati, orariLiberi, ordinaServizi, primaDataPerGiorno, primoOrarioUtile, promemoriaDaInviare, ricorrenzaVuota, riepilogoGiorno, rigeneraTutteLeSerie, riordinaServizi, saltaOccorrenza, salvaAppuntamento, salvaCategoria, salvaCliente, salvaImpostazioniCliente, salvaServizio, salvaTitoloDelGiorno, scriviNotaProssima, segnaMessaggioInviato, senzaScheda, serviziAbitualiDi, serviziProposti, servizioPerCliente, settimanaTipica, spostaSerie, storicoCliente, tariffaPerCliente, titoliDeiGiorni, titoloDelGiorno, tratti, verificaConflitti };
 })();
 
 /* ======================= js/ponte.js ======================= */
@@ -3299,9 +3636,10 @@ let daRinviare = false;
 /* ---------- costruzione del pacchetto ---------- */
 
 async function costruisciPacchetto() {
-  const [clienti, appuntamenti] = await Promise.all([
+  const [clienti, appuntamenti, giorni] = await Promise.all([
     store.elencoClienti(),
-    db.leggiTutti('appuntamenti')
+    db.leggiTutti('appuntamenti'),
+    db.leggiTutti('giorni')
   ]);
 
   const oggi = dayKey(new Date());
@@ -3337,10 +3675,14 @@ async function costruisciPacchetto() {
         stato: a.stato,
         tratti: trattiAssoluti
       };
-      if (!a.clienteId) riga.senzaScheda = true;
+      // Gli impegni personali vanno segnalati per quello che sono: occupano
+      // l'orario, ma non è una cliente e non c'è niente da incassare.
+      if (store.eImpegno(a)) riga.impegno = true;
+      else if (!a.clienteId) riga.senzaScheda = true;
       if (a.serieId) riga.fisso = true;
       if (a.note) riga.note = a.note;
       if (c && c.allergie) riga.allergie = c.allergie;
+      if (c && c.notaProssima) riga.promemoria = c.notaProssima;
       return riga;
     });
 
@@ -3415,6 +3757,10 @@ async function costruisciPacchetto() {
     chiusure: agendaCfg.chiusure || [],
     // Le aperture extra vincono su tutto: il telefono deve saperlo anche lui.
     aperture: agendaCfg.aperture || [],
+    // I promemoria scritti in cima alle giornate: solo quelli del periodo utile.
+    titoliGiorni: Object.fromEntries((giorni || [])
+      .filter(g => g && g.titolo && g.giorno >= daGiorno && g.giorno <= aGiorno)
+      .map(g => [g.giorno, g.titolo])),
     periodo: { da: daGiorno, a: aGiorno },
     agenda,
     clienti: elencoClienti,
@@ -3732,6 +4078,14 @@ function inizializza({ suNuovoAppuntamento, suApriCliente }) {
   document.getElementById('vai-oggi').addEventListener('click', () => vaiA(new Date()));
   document.getElementById('btn-nuovo').addEventListener('click', () => apriNuovo({ data: dataCorrente }));
   document.getElementById('cerca-scheda').addEventListener('click', () => apriRicercaScheda());
+  document.getElementById('btn-impegno').addEventListener('click', () => moduloImpegno({ data: dataCorrente }));
+
+  // Il calendario: l'icona copre un campo data, così si apre quello di Android.
+  const campoData = document.getElementById('data-scelta');
+  campoData.addEventListener('change', () => {
+    if (!campoData.value) return;
+    vaiA(fromDayKey(campoData.value));
+  });
 
   const selettore = document.getElementById('selettore-vista');
   selettore.value = String(cfg.get('agenda').vistaGiorni || 1);
@@ -3803,6 +4157,9 @@ async function disegna() {
     etichetta.innerHTML = `${esc(dataEstesa(dataCorrente))}<small>${isToday(dataCorrente) ? 'oggi' : dayKey(dataCorrente).split('-').reverse().join('/')}</small>`;
   }
   document.getElementById('vai-oggi').hidden = !multi && isToday(dataCorrente);
+  // Il calendario si apre sul giorno che si sta guardando, non su oggi.
+  const campoData = document.getElementById('data-scelta');
+  if (campoData) campoData.value = dayKey(dataCorrente);
 
   /* --- dati di tutte le giornate mostrate --- */
   const giornate = [];
@@ -3813,13 +4170,16 @@ async function disegna() {
       appuntamenti: (await store.giornataCompleta(g)).filter(a => a.stato !== 'annullato'),
       riepilogo: await store.riepilogoGiorno(g),
       fasce: store.fasceDelGiorno(g),
-      chiusura: store.chiusuraDi(g)
+      chiusura: store.chiusuraDi(g),
+      titolo: await store.titoloDelGiorno(g)
     });
   }
 
-  const totaleClienti = giornate.reduce((t, g) => t + g.appuntamenti.length, 0);
+  // Gli impegni personali occupano la griglia ma non sono clienti.
+  const totaleClienti = giornate.reduce((t, g) => t + g.riepilogo.totale, 0);
   const totaleLavoro = giornate.reduce((t, g) => t + g.riepilogo.minutiOccupati, 0);
   const totalePrevisto = giornate.reduce((t, g) => t + g.riepilogo.previsto, 0);
+  const totaleImpegni = giornate.reduce((t, g) => t + g.riepilogo.impegni, 0);
 
   document.getElementById('riassunto-giorno').innerHTML = `
     <div class="riassunto__voce">
@@ -3834,6 +4194,11 @@ async function disegna() {
     <div class="riassunto__voce">
       <div class="riassunto__valore">${euro(totalePrevisto, valuta)}</div>
       <div class="riassunto__etichetta">previsto</div>
+    </div>` : ''}
+    ${totaleImpegni ? `
+    <div class="riassunto__voce">
+      <div class="riassunto__valore">${totaleImpegni}</div>
+      <div class="riassunto__etichetta">${totaleImpegni === 1 ? 'impegno' : 'impegni'}</div>
     </div>` : ''}
   `;
 
@@ -3880,6 +4245,22 @@ async function disegna() {
     }
     html += '</div>';
   }
+
+  /* Il titolo della giornata: una riga da scrivere sopra l'agenda, per i
+     promemoria che non sono appuntamenti — «consegna colore», «Marta richiama».
+     Una per ogni giornata mostrata, allineata alla sua colonna. */
+  html += `<div class="titoli-giorno" style="grid-template-columns:repeat(${giornate.length},1fr)">`;
+  for (const g of giornate) {
+    html += `<div class="titolo-giorno${g.titolo ? ' is-pieno' : ''}">
+      <span class="titolo-giorno__segno">📌</span>
+      <input class="titolo-giorno__campo" type="text" maxlength="120"
+             data-titolo-giorno="${esc(g.chiave)}"
+             value="${esc(g.titolo)}"
+             aria-label="Promemoria del ${esc(dataBreve(g.data))}"
+             placeholder="${multi ? 'promemoria' : 'Scrivi qui un promemoria per la giornata…'}">
+    </div>`;
+  }
+  html += '</div>';
 
   html += `<div class="agenda__griglia" style="height:${altezza}px">`;
 
@@ -3940,6 +4321,18 @@ async function disegna() {
 
   contenitore.innerHTML = html;
 
+  /* Il titolo si salva uscendo dal campo. Di proposito non fa ridisegnare
+     l'agenda: ridisegnare mentre si scrive porterebbe via il fuoco. */
+  contenitore.querySelectorAll('[data-titolo-giorno]').forEach(campo => {
+    campo.addEventListener('change', async () => {
+      const scritto = await store.salvaTitoloDelGiorno(campo.dataset.titoloGiorno, campo.value);
+      campo.value = scritto;
+      campo.closest('.titolo-giorno').classList.toggle('is-pieno', !!scritto);
+      ui.ok(scritto ? 'Promemoria del giorno salvato' : 'Promemoria tolto');
+    });
+    campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') campo.blur(); });
+  });
+
   const pillolaPonte = document.getElementById('avviso-ponte');
   if (pillolaPonte) pillolaPonte.addEventListener('click', () => {
     document.querySelector('[data-vista="impostazioni"]').click();
@@ -3972,8 +4365,14 @@ function bloccoHtml(a, { ppm, inizioMin, colonne, multi, valuta, mostraPrezzi })
   const corto = alt < (multi ? 44 : 62);
   const colore = a._colore || 'var(--oro)';
 
+  const impegno = store.eImpegno(a);
+  const fisso = !impegno && !!a.serieId;
   const nome = a.nomeVisualizzato || (a.cliente ? nomeCompleto(a.cliente) : 'Cliente eliminata');
-  const servizi = (a.servizi || []).map(s => s.nome).join(', ') || 'Appuntamento';
+  const servizi = impegno
+    ? 'impegno personale'
+    : ((a.servizi || []).map(s => s.nome).join(', ') || 'Appuntamento');
+  // Il promemoria per la prossima volta si vede dove serve: sul suo appuntamento.
+  const nota = !impegno ? store.notaProssimaDi(a.cliente) : '';
 
   // Le attese vanno disegnate dove cadono davvero: in mezzo, non in fondo.
   const bandeAttesa = store.tratti(a)
@@ -3986,21 +4385,25 @@ function bloccoHtml(a, { ppm, inizioMin, colonne, multi, valuta, mostraPrezzi })
     }).join('');
 
   return `
-    <div class="app-blocco${corto ? ' app-blocco--corto' : ''} app-blocco--${esc(a.stato)}"
+    <div class="app-blocco${corto ? ' app-blocco--corto' : ''} app-blocco--${esc(a.stato)}${
+           fisso ? ' app-blocco--fisso' : ''}${impegno ? ' app-blocco--impegno' : ''}"
          data-id="${esc(a.id)}"
-         style="top:${top}px;height:${alt}px;left:calc(${sinistra}% + 2px);width:calc(${larghezza}% - 6px);border-left-color:${esc(colore)}">
+         style="top:${top}px;height:${alt}px;left:calc(${sinistra}% + 2px);width:calc(${larghezza}% - 6px);${
+           impegno ? '' : `border-left-color:${esc(colore)}`}">
       ${bandeAttesa}
       <div class="app-blocco__ora">${ora(daIsoLocale(a.inizio))}${corto || multi ? '' : ` – ${ora(new Date(daIsoLocale(a.inizio).getTime() + a.durata * 60000))}`}</div>
-      <div class="app-blocco__nome">${esc(nome)}</div>
+      <div class="app-blocco__nome">${impegno ? '<span class="app-blocco__segno">◆</span> ' : ''}${esc(nome)}${
+        nota ? ' <span class="app-blocco__nota" title="' + esc(nota) + '">📌</span>' : ''}</div>
       ${corto ? '' : `<div class="app-blocco__servizi">${esc(servizi)}</div>`}
       ${corto || alt < 96 ? '' : `
         <div class="app-blocco__coda">
-          ${mostraPrezzi && a.prezzo ? `<span class="pillola pillola--oro">${euro(a.prezzo, valuta)}</span>` : ''}
+          ${!impegno && mostraPrezzi && a.prezzo ? `<span class="pillola pillola--oro">${euro(a.prezzo, valuta)}</span>` : ''}
           ${a.posaMinuti ? `<span class="pillola">posa ${a.posaMinuti}′</span>` : ''}
-          ${a.serieId ? '<span class="pillola" title="Appuntamento fisso">↻</span>' : ''}
-          ${!a.clienteId && a.clienteNome ? '<span class="pillola" title="Senza scheda cliente">senza scheda</span>' : ''}
-          <span class="segno-invio segno-invio--${a.confermaInviata ? 'ok' : 'no'}"
-                title="${a.confermaInviata ? 'Conferma inviata' : 'Conferma non ancora inviata'}">${a.confermaInviata ? '✓' : '!'}</span>
+          ${fisso ? '<span class="pillola pillola--verde" title="Appuntamento fisso">↻ fisso</span>' : ''}
+          ${nota ? `<span class="pillola pillola--nota" title="Per la prossima volta">📌 ${esc(nota.length > 22 ? nota.slice(0, 21) + '…' : nota)}</span>` : ''}
+          ${store.senzaScheda(a) ? '<span class="pillola" title="Senza scheda cliente">senza scheda</span>' : ''}
+          ${impegno ? '' : `<span class="segno-invio segno-invio--${a.confermaInviata ? 'ok' : 'no'}"
+                title="${a.confermaInviata ? 'Conferma inviata' : 'Conferma non ancora inviata'}">${a.confermaInviata ? '✓' : '!'}</span>`}
         </div>`}
     </div>`;
 }
@@ -4040,6 +4443,8 @@ function disponiInColonne(appuntamenti) {
 async function mostraDettaglio(id) {
   const a = await store.leggiAppuntamento(id);
   if (!a) return;
+  // Un impegno personale non ha cliente, servizi né WhatsApp: ha un pannello suo.
+  if (store.eImpegno(a)) return dettaglioImpegno(a);
   const cliente = a.clienteId ? await store.leggiCliente(a.clienteId) : null;
   const senzaScheda = store.senzaScheda(a);
   const valuta = cfg.get('incassi').valuta;
@@ -4090,6 +4495,26 @@ async function mostraDettaglio(id) {
       </div>
 
       ${a.note ? `<div class="campo"><span class="campo__etichetta">Note dell'appuntamento</span><p class="testo-lungo">${esc(a.note)}</p></div>` : ''}
+
+      ${cliente ? `
+      <div class="campo" id="zona-nota-prossima">
+        <span class="campo__etichetta">Per la prossima volta</span>
+        ${store.notaProssimaDi(cliente) ? `
+          <div class="riquadro-nota">
+            <span>📌</span>
+            <div style="flex:1;min-width:0">${esc(store.notaProssimaDi(cliente))}</div>
+            <button class="btn btn--fantasma btn--piccolo" data-nota="fatto" type="button">Fatto</button>
+          </div>
+          <button class="btn btn--fantasma btn--piccolo" data-nota="cambia" type="button" style="margin-top:9px">Cambia</button>
+        ` : `
+          <div style="display:flex;gap:9px;align-items:flex-start">
+            <input class="input" id="nota-prossima" placeholder="Es. avanza 20 euro · piega gratis" maxlength="120">
+            <button class="btn btn--fantasma" data-nota="salva" type="button">Segna</button>
+          </div>
+          <p class="campo__aiuto">Resta attaccato a ${esc(cliente.nome)} e ricompare su tutti i suoi appuntamenti,
+          finché non lo segni fatto.</p>
+        `}
+      </div>` : ''}
 
       <div class="campo">
         <span class="campo__etichetta">Stato</span>
@@ -4142,6 +4567,40 @@ async function mostraDettaglio(id) {
     setTimeout(() => moduloCreaScheda(a), 250);
   });
 
+  /* Il promemoria per la prossima volta. Sta sulla cliente, non su questo
+     appuntamento: se lei disdice, i 20 euro restano segnati lo stesso. */
+  p.elemento.querySelectorAll('[data-nota]').forEach(b => b.addEventListener('click', async () => {
+    if (!cliente) return;
+    const cosa = b.dataset.nota;
+
+    if (cosa === 'fatto') {
+      await store.scriviNotaProssima(cliente.id, '');
+      ui.ok('Promemoria segnato come fatto');
+      p.chiudi();
+      return;
+    }
+    if (cosa === 'cambia') {
+      const testo = await ui.chiediTesto({
+        titolo: 'Per la prossima volta',
+        sottotitolo: `Ricomparirà su ogni appuntamento di ${cliente.nome} finché non lo segni fatto.`,
+        valore: store.notaProssimaDi(cliente),
+        segnaposto: 'Es. avanza 20 euro · piega gratis',
+        aiuto: 'Svuota il campo e salva per toglierlo.'
+      });
+      if (testo === null) return;
+      await store.scriviNotaProssima(cliente.id, testo);
+      ui.ok(testo ? 'Promemoria aggiornato' : 'Promemoria tolto');
+      p.chiudi();
+      return;
+    }
+    const campo = p.elemento.querySelector('#nota-prossima');
+    const testo = campo ? campo.value.trim() : '';
+    if (!testo) { ui.errore('Scrivi cosa ricordare'); return; }
+    await store.scriviNotaProssima(cliente.id, testo);
+    ui.ok('Promemoria segnato');
+    p.chiudi();
+  }));
+
   p.elemento.querySelector('[data-azione="elimina"]').addEventListener('click', async () => {
     if (a.serieId) {
       const scelta = await chiediSuLaSerie(a, 'eliminare');
@@ -4181,6 +4640,128 @@ async function mostraDettaglio(id) {
     }
     p.chiudi();
     setTimeout(() => apriNuovo({ appuntamento: a }), 260);
+  });
+}
+
+/* =========================================================================
+   IMPEGNI PERSONALI
+   Il dentista, una consegna, un'ora da tenersi libera. Occupano lo spazio
+   come un appuntamento — l'app non propone quell'orario e avvisa se ci si
+   fissa sopra — ma non sono clienti e non entrano negli incassi.
+   ========================================================================= */
+
+const DURATE_IMPEGNO = [15, 30, 45, 60, 90, 120, 180];
+
+function moduloImpegno({ data = new Date(), impegno = null } = {}) {
+  const modifica = !!impegno;
+  const giorno = impegno ? impegno.giorno : dayKey(data);
+  const oraIniziale = impegno ? impegno.inizio.slice(11) : ora(new Date());
+  const durataIniziale = impegno ? impegno.durata : 60;
+
+  const p = ui.pannello({
+    titolo: modifica ? 'Modifica impegno' : 'Nuovo impegno',
+    sottotitolo: 'Un tuo impegno personale: occupa lo spazio in agenda, ma non è una cliente.',
+    contenuto: `
+      <div class="campo">
+        <label class="campo__etichetta" for="im-titolo">Cos'è</label>
+        <input class="input" id="im-titolo" maxlength="80" data-fuoco
+               value="${esc(impegno ? (impegno.titolo || '') : '')}"
+               placeholder="Dentista · consegna · pausa">
+      </div>
+      <div class="riga-campi">
+        <div class="campo">
+          <label class="campo__etichetta" for="im-giorno">Giorno</label>
+          <input class="input" id="im-giorno" type="date" value="${esc(giorno)}">
+        </div>
+        <div class="campo">
+          <label class="campo__etichetta" for="im-ora">Ora</label>
+          ${ui.campoOra('im-ora', oraIniziale)}
+        </div>
+      </div>
+      <div class="campo" style="margin-bottom:0">
+        <span class="campo__etichetta">Quanto dura</span>
+        <div class="chip-servizi" id="im-durate">
+          ${DURATE_IMPEGNO.map(m => `<button class="chip${m === durataIniziale ? ' is-scelto' : ''}"
+             data-durata="${m}" type="button">${durataUmana(m)}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:11px">
+          <span class="testo-tenue">oppure</span>
+          <input class="input" id="im-durata" type="number" min="5" step="5" inputmode="numeric"
+                 style="max-width:110px" value="${durataIniziale}">
+          <span class="testo-tenue">minuti</span>
+        </div>
+      </div>`,
+    azioni: `<button class="btn btn--fantasma" data-x="no">Annulla</button>
+             <button class="btn btn--principale" data-x="si">${modifica ? 'Salva' : 'Segna l\'impegno'}</button>`
+  });
+
+  ui.legaCampiOra(p.elemento);
+  const campoDurata = p.elemento.querySelector('#im-durata');
+
+  ui.su(p.elemento, 'click', '[data-durata]', (e, el) => {
+    campoDurata.value = el.dataset.durata;
+    p.elemento.querySelectorAll('[data-durata]').forEach(b =>
+      b.classList.toggle('is-scelto', b === el));
+  });
+  campoDurata.addEventListener('input', () => {
+    p.elemento.querySelectorAll('[data-durata]').forEach(b =>
+      b.classList.toggle('is-scelto', Number(b.dataset.durata) === Number(campoDurata.value)));
+  });
+
+  p.elemento.querySelector('[data-x="no"]').addEventListener('click', () => p.chiudi());
+  p.elemento.querySelector('[data-x="si"]').addEventListener('click', async () => {
+    const titolo = p.elemento.querySelector('#im-titolo').value.trim();
+    const g = p.elemento.querySelector('#im-giorno').value;
+    const oraScritta = ui.normalizzaOra(p.elemento.querySelector('#im-ora').value);
+    const durata = Math.max(5, Number(campoDurata.value) || 60);
+
+    if (!titolo) { ui.errore('Scrivi cos\'è: «dentista», «consegna»…'); return; }
+    if (!g) { ui.errore('Scegli il giorno'); return; }
+    if (!oraScritta) { ui.errore('Scrivi un orario, per esempio 15:00'); return; }
+
+    await store.salvaAppuntamento({
+      id: impegno ? impegno.id : undefined,
+      creatoIl: impegno ? impegno.creatoIl : undefined,
+      tipo: 'impegno',
+      titolo,
+      inizio: `${g}T${oraScritta}`,
+      durata,
+      prezzo: 0,
+      servizi: []
+    });
+    ui.ok(modifica ? 'Impegno aggiornato' : 'Impegno segnato');
+    p.chiudi();
+    vaiA(fromDayKey(g));
+  });
+}
+
+function dettaglioImpegno(a) {
+  const d = daIsoLocale(a.inizio);
+  const fine = new Date(d.getTime() + a.durata * 60000);
+  const p = ui.pannello({
+    titolo: a.titolo || 'Impegno',
+    sottotitolo: `${dataEstesa(d)} · ${ora(d)}–${ora(fine)} · ${durataUmana(a.durata)}`,
+    contenuto: `
+      <div class="avviso-riquadro avviso-riquadro--info">
+        <span>◆</span><div><strong>Impegno personale</strong>
+        Occupa lo spazio come un appuntamento: l'app non propone quest'ora fra quelle libere
+        e ti avvisa se ci fissi sopra una cliente. Non entra negli incassi.</div>
+      </div>`,
+    azioni: `
+      <button class="btn btn--fantasma" data-x="elimina" style="margin-right:auto;color:var(--rosso)">Elimina</button>
+      <button class="btn btn--principale" data-x="modifica">Modifica</button>`
+  });
+  p.elemento.querySelector('[data-x="elimina"]').addEventListener('click', async () => {
+    const sicuro = await ui.conferma({
+      titolo: 'Togliere l\'impegno?',
+      testo: 'Sparisce dall\'agenda e quell\'ora torna libera.',
+      confermaTesto: 'Togli', pericolo: true
+    });
+    if (sicuro) { await store.eliminaAppuntamento(a.id); ui.ok('Impegno tolto'); p.chiudi(); }
+  });
+  p.elemento.querySelector('[data-x="modifica"]').addEventListener('click', () => {
+    p.chiudi();
+    setTimeout(() => moduloImpegno({ impegno: a }), 250);
   });
 }
 
@@ -4280,16 +4861,17 @@ function moduloSpostaSerie(appuntamento) {
     contenuto: `
       <div class="campo">
         <label class="campo__etichetta" for="ss-ora">Nuovo orario</label>
-        <input class="input" id="ss-ora" type="time" step="300" value="${esc(appuntamento.inizio.slice(11))}" style="max-width:180px" data-fuoco>
+        ${ui.campoOra('ss-ora', appuntamento.inizio.slice(11), { stile: 'max-width:180px' })}
         <p class="campo__aiuto">Il giorno della settimana e la cadenza si cambiano dall'ingranaggio della scheda cliente.</p>
       </div>`,
     azioni: `<button class="btn btn--fantasma" data-x="no">Annulla</button>
              <button class="btn btn--principale" data-x="si">Sposta tutti</button>`
   });
+  ui.legaCampiOra(p.elemento);
   p.elemento.querySelector('[data-x="no"]').addEventListener('click', () => p.chiudi());
   p.elemento.querySelector('[data-x="si"]').addEventListener('click', async () => {
-    const ora = p.elemento.querySelector('#ss-ora').value;
-    if (!ora) return;
+    const ora = ui.normalizzaOra(p.elemento.querySelector('#ss-ora').value);
+    if (!ora) { ui.errore('Scrivi un orario, per esempio 15:00'); return; }
     const quanti = await store.spostaSerie(appuntamento, { ora });
     ui.ok(`${quanti} appuntamenti spostati alle ${ora}`);
     p.chiudi();
@@ -4494,7 +5076,7 @@ async function pannelloProposte() {
   });
 }
 
-return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, mostraDettaglio, pannelloProposte, vaiA };
+return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, moduloImpegno, mostraDettaglio, pannelloProposte, vaiA };
 })();
 
 /* ======================= js/views/clienti.js ======================= */
@@ -4650,6 +5232,19 @@ async function scheda(id) {
 
       ${c.allergie ? `<div class="riquadro-allergie"><span>⚠</span><div><strong>Allergie e sensibilità</strong>${esc(c.allergie)}</div></div>` : ''}
 
+      <!-- Il promemoria per la prossima volta: sta qui in alto perché è la
+           cosa da ricordarsi appena si apre la scheda. -->
+      ${store.notaProssimaDi(c) ? `
+        <div class="riquadro-nota" style="margin-bottom:14px">
+          <span>📌</span>
+          <div style="flex:1;min-width:0"><strong>Per la prossima volta</strong><br>${esc(store.notaProssimaDi(c))}</div>
+          <button class="btn btn--fantasma btn--piccolo" data-x="nota-fatto" type="button">Fatto</button>
+          <button class="btn btn--fantasma btn--piccolo" data-x="nota-cambia" type="button">Cambia</button>
+        </div>` : `
+        <button class="btn btn--fantasma btn--piccolo" data-x="nota-cambia" type="button" style="margin-bottom:14px">
+          📌 Segna un promemoria per la prossima volta
+        </button>`}
+
       <div class="scheda-statistiche">
         <div class="statistica"><div class="statistica__valore">${s.visite}</div><div class="statistica__etichetta">visite</div></div>
         <div class="statistica"><div class="statistica__valore">${euro(s.totaleSpeso, valuta)}</div><div class="statistica__etichetta">totale</div></div>
@@ -4690,6 +5285,28 @@ async function scheda(id) {
 
   p.elemento.querySelector('[data-x="ingranaggio"]').addEventListener('click', () => {
     pannelloImpostazioni(c, () => { p.chiudi(); setTimeout(() => scheda(id), 260); });
+  });
+
+  const notaFatto = p.elemento.querySelector('[data-x="nota-fatto"]');
+  if (notaFatto) notaFatto.addEventListener('click', async () => {
+    await store.scriviNotaProssima(c.id, '');
+    ui.ok('Promemoria segnato come fatto');
+    p.chiudi(); setTimeout(() => scheda(id), 260);
+  });
+
+  const notaCambia = p.elemento.querySelector('[data-x="nota-cambia"]');
+  if (notaCambia) notaCambia.addEventListener('click', async () => {
+    const testo = await ui.chiediTesto({
+      titolo: 'Per la prossima volta',
+      sottotitolo: `Ricomparirà su ogni appuntamento di ${c.nome} finché non lo segni fatto.`,
+      valore: store.notaProssimaDi(c),
+      segnaposto: 'Es. avanza 20 euro · piega gratis',
+      aiuto: 'Svuota il campo e salva per toglierlo.'
+    });
+    if (testo === null) return;
+    await store.scriviNotaProssima(c.id, testo);
+    ui.ok(testo ? 'Promemoria segnato' : 'Promemoria tolto');
+    p.chiudi(); setTimeout(() => scheda(id), 260);
   });
 
   ui.su(p.elemento, 'click', '[data-visita]', (e, el) => {
@@ -4929,7 +5546,7 @@ async function pannelloImpostazioni(cliente, alChiudere) {
             </div>
             <div class="campo">
               <label class="campo__etichetta" for="r-ora">Ora</label>
-              <input class="input" id="r-ora" type="time" step="300" value="${esc(r.ora)}">
+              ${ui.campoOra('r-ora', r.ora)}
             </div>
             <div class="campo">
               <label class="campo__etichetta" for="r-cadenza">Ogni quanto</label>
@@ -5058,6 +5675,7 @@ async function pannelloImpostazioni(cliente, alChiudere) {
   }
 
   function aggancia() {
+    ui.legaCampiOra(radice);
     const attiva = radice.querySelector('#r-attiva');
     attiva.addEventListener('change', () => {
       r.attiva = attiva.checked;
@@ -5072,7 +5690,11 @@ async function pannelloImpostazioni(cliente, alChiudere) {
     });
 
     const ora = radice.querySelector('#r-ora');
-    if (ora) ora.addEventListener('change', () => { r.ora = ora.value; disegnaAnteprima(); });
+    if (ora) ora.addEventListener('change', () => {
+      r.ora = ui.normalizzaOra(ora.value) || r.ora;
+      ora.value = r.ora;
+      disegnaAnteprima();
+    });
 
     const cadenza = radice.querySelector('#r-cadenza');
     if (cadenza) cadenza.addEventListener('change', () => {
@@ -5180,7 +5802,7 @@ const store = MOD.store;
 const cfg = MOD.cfgApp;
 const wa = MOD.whatsapp;
 const ui = MOD.ui;
-const { esc, dayKey, fromDayKey, addDays, dataEstesa, dataBreve, GIORNI_BREVI, MESI_BREVI, euro, durataUmana, nomeCompleto, iniziali, tempoFa, telefonoLeggibile, debounce, isToday, daIsoLocale, normalizza, ora: oraDi } = MOD.util;
+const { esc, dayKey, fromDayKey, addDays, dataEstesa, dataBreve, GIORNI_BREVI, MESI_BREVI, euro, durataUmana, nomeCompleto, iniziali, tempoFa, telefonoLeggibile, debounce, isToday, daIsoLocale, normalizza, minutiDaHHMM, hhmmDaMinuti, ora: oraDi } = MOD.util;
 
 let listino = null;   // caricato una volta e riusato
 
@@ -5288,6 +5910,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
       <div class="passo__titolo"><span class="passo__numero">3</span> Quando</div>
       <div class="selettore-giorni" id="zona-giorni"></div>
       <div style="margin-top:12px" id="zona-orari"></div>
+      <div style="margin-top:14px" id="specchietto"></div>
     </div>
 
     <div class="passo" id="zona-avvisi"></div>
@@ -5351,6 +5974,9 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
           <button class="btn btn--fantasma btn--piccolo" id="cambia-cliente" type="button">Cambia</button>
         </div>
         ${c.allergie ? `<div class="riquadro-allergie" style="margin-top:10px"><span>⚠</span><div><strong>Attenzione</strong>${esc(c.allergie)}</div></div>` : ''}
+        ${store.notaProssimaDi(c) ? `<div class="riquadro-nota" style="margin-top:10px">
+          <span>📌</span><div style="flex:1;min-width:0"><strong>Per questa volta</strong><br>${esc(store.notaProssimaDi(c))}</div>
+        </div>` : ''}
       `;
       zonaCliente.querySelector('#cambia-cliente').addEventListener('click', () => {
         stato.cliente = null; stato.nomeLibero = '';
@@ -5733,7 +6359,7 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
              oppure indicare l'orario a mano qui sotto.</div></div>`;
       zonaOrari.innerHTML +=  `
         <div style="margin-top:11px;display:flex;gap:10px;align-items:center">
-          <input class="input" id="ora-manuale" type="time" step="300" style="max-width:170px" value="${esc(stato.ora || '')}">
+          ${ui.campoOra('ora-manuale', stato.ora || '', { stile: 'max-width:170px' })}
           <span class="testo-tenue">orario libero</span>
         </div>`;
     } else {
@@ -5755,9 +6381,12 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
         </div>
         <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <span class="testo-tenue">${scelotFuoriFascia ? 'Orario scelto a mano:' : 'Oppure a mano:'}</span>
-          <input class="input" id="ora-manuale" type="time" step="300" style="max-width:150px${scelotFuoriFascia ? ';border-color:var(--oro);background:var(--oro-tenue)' : ''}" value="${esc(stato.ora || '')}">
+          ${ui.campoOra('ora-manuale', stato.ora || '', {
+            stile: 'max-width:150px' + (scelotFuoriFascia ? ';border-color:var(--oro);background:var(--oro-tenue)' : '') })}
         </div>`;
     }
+
+    ui.legaCampiOra(zonaOrari);
 
     zonaOrari.querySelectorAll('[data-ora]').forEach(b => b.addEventListener('click', async () => {
       stato.ora = b.dataset.ora;
@@ -5766,11 +6395,134 @@ async function apri({ data = new Date(), oraSuggerita = null, appuntamento = nul
     }));
     const manuale = zonaOrari.querySelector('#ora-manuale');
     if (manuale) manuale.addEventListener('change', async (e) => {
-      if (!e.target.value) return;
-      stato.ora = e.target.value;
+      const scritta = ui.normalizzaOra(e.target.value);
+      if (!scritta) return;
+      e.target.value = scritta;
+      stato.ora = scritta;
       await disegnaOrari();
       await aggiorna();
     });
+
+    await disegnaSpecchietto();
+  }
+
+  /* ---------------- lo specchietto degli orari vicini ----------------
+     Tre ore attorno all'orario scelto, disegnate in scala. Ogni appuntamento
+     è una barra, le pose sono tratteggiate perché in quei minuti lei è libera,
+     e il nuovo appuntamento sta sopra in oro. Serve a decidere con gli occhi
+     se il sormonto sta in piedi, invece che a memoria. */
+
+  async function disegnaSpecchietto() {
+    const zona = radice.querySelector('#specchietto');
+    if (!zona) return;
+
+    if (!stato.ora) {
+      zona.innerHTML = '<p class="campo__aiuto">Scegli un orario e qui sotto vedi com\'è occupato intorno.</p>';
+      return;
+    }
+
+    const d = durata();
+    const inizioNuovo = minutiDaHHMM(stato.ora);
+    const fineNuovo = inizioNuovo + d;
+
+    // La finestra abbraccia il nuovo appuntamento con un'ora di margine per parte.
+    const da = Math.max(0, inizioNuovo - 60);
+    const a = Math.min(24 * 60, Math.max(fineNuovo + 60, da + 180));
+    const larghezza = a - da;
+    const perc = (m) => ((Math.min(Math.max(m, da), a) - da) / larghezza) * 100;
+
+    const giornata = (await store.giornataCompleta(stato.data))
+      .filter(x => x.stato !== 'annullato')
+      .filter(x => !appuntamento || x.id !== appuntamento.id)
+      .filter(x => minutiDaHHMM(x.inizio.slice(11)) < a && minutiDaHHMM(x.inizio.slice(11)) + x.durata > da)
+      .sort((x, y) => x.inizio.localeCompare(y.inizio));
+
+    // Corsie: due appuntamenti che si accavallano non devono coprirsi.
+    const corsie = [];
+    const posizione = new Map();
+    for (const x of giornata) {
+      const i0 = minutiDaHHMM(x.inizio.slice(11));
+      const i1 = i0 + x.durata;
+      let c = corsie.findIndex(fine => fine <= i0);
+      if (c === -1) { corsie.push(i1); c = corsie.length - 1; } else corsie[c] = i1;
+      posizione.set(x.id, c);
+    }
+
+    // Il nuovo appuntamento non esiste ancora: per disegnarlo si finge, con i
+    // servizi scelti finora, così le sue pose si vedono come quelle degli altri.
+    const ipotetico = { servizi: serviziOrdinati(), durata: d };
+
+    const barra = (x, corsia, nuovo) => {
+      const oggetto = nuovo ? ipotetico : x;
+      const i0 = nuovo ? inizioNuovo : minutiDaHHMM(x.inizio.slice(11));
+      const i1 = nuovo ? fineNuovo : i0 + x.durata;
+      const durataBarra = Math.max(1, i1 - i0);
+      const sx = perc(i0), larg = Math.max(1.2, perc(i1) - perc(i0));
+      const dentro = (m) => (m / durataBarra) * 100;   // i tratti partono da 0
+      const pose = store.tratti(oggetto)
+        .filter(t => t.tipo === 'attesa')
+        .map(t => `<span class="specchietto__posa" style="left:${dentro(t.da)}%;width:${dentro(t.a) - dentro(t.da)}%"></span>`)
+        .join('');
+      const etichetta = nuovo
+        ? (stato.cliente ? stato.cliente.nome : (stato.nomeLibero || 'questo'))
+        : (x.nomeVisualizzato || '');
+      return `<div class="specchietto__barra${nuovo ? ' specchietto__barra--nuovo' : ''}${(!nuovo && store.eImpegno(x)) ? ' specchietto__barra--impegno' : ''}"
+                   style="left:${sx}%;width:${larg}%;top:${corsia * 26}px"
+                   title="${esc(etichetta)} — ${hhmmDaMinuti(i0)}–${hhmmDaMinuti(i1)}">
+        ${pose}<span class="specchietto__nome">${esc(etichetta)}</span>
+      </div>`;
+    };
+
+    const corsiaNuovo = corsie.length;
+    const altezza = (corsiaNuovo + 1) * 26;
+
+    // Tacche: ogni mezz'ora una riga fra le corsie, ogni ora il numero sopra.
+    let tacche = '', numeri = '';
+    const primaTacca = Math.ceil(da / 30) * 30;
+    for (let m = primaTacca; m <= a; m += 30) {
+      const intera = m % 60 === 0;
+      tacche += `<span class="specchietto__tacca${intera ? ' specchietto__tacca--ora' : ''}" style="left:${perc(m)}%"></span>`;
+      if (intera) numeri += `<span class="specchietto__etichetta" style="left:${perc(m)}%">${hhmmDaMinuti(m)}</span>`;
+    }
+
+    const conflitti = await store.verificaConflitti(`${dayKey(stato.data)}T${stato.ora}`, d, {
+      escludiId: appuntamento ? appuntamento.id : null, servizi: serviziOrdinati()
+    });
+
+    // I nomi si prendono dalla giornata già risolta: gli appuntamenti che
+    // tornano da verificaConflitti non hanno la cliente attaccata.
+    const nomeDi = (id) => {
+      const trovato = giornata.find(x => x.id === id);
+      return trovato ? trovato.nomeVisualizzato : 'un\'altra cliente';
+    };
+
+    let verdetto;
+    if (conflitti.attivi.length) {
+      verdetto = `<div class="specchietto__verdetto specchietto__verdetto--no">
+        ✕ Si accavalla al lavoro di ${esc(conflitti.attivi.map(x => nomeDi(x.id)).join(', '))}</div>`;
+    } else if (conflitti.durantePosa.length) {
+      verdetto = `<div class="specchietto__verdetto specchietto__verdetto--forse">
+        ↔ Cade nella posa di ${esc(conflitti.durantePosa.map(x => nomeDi(x.id)).join(', '))}: in quei minuti sei libera, il sormonto si può fare</div>`;
+    } else {
+      verdetto = '<div class="specchietto__verdetto specchietto__verdetto--si">✓ Spazio libero</div>';
+    }
+
+    zona.innerHTML = `
+      <div class="specchietto">
+        <div class="specchietto__testa">Com'è occupato qui intorno</div>
+        ${verdetto}
+        <div class="specchietto__scala">${numeri}</div>
+        <div class="specchietto__corsie" style="height:${altezza}px">
+          ${tacche}
+          ${giornata.map(x => barra(x, posizione.get(x.id), false)).join('')}
+          ${barra(null, corsiaNuovo, true)}
+        </div>
+        <div class="specchietto__legenda">
+          <span><i class="specchietto__campione specchietto__campione--altri"></i>già fissato</span>
+          <span><i class="specchietto__campione specchietto__campione--posa"></i>posa, sei libera</span>
+          <span><i class="specchietto__campione specchietto__campione--nuovo"></i>questo appuntamento</span>
+        </div>
+      </div>`;
   }
 
   function nomeCliente(app) {
@@ -6098,7 +6850,7 @@ const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, dataBreve, dataEstesa, dayKey, fromDayKey, nomeCompleto, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.4.1';
+const VERSIONE_APP = '1.5.0';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
@@ -6747,10 +7499,14 @@ async function dOrari(p) {
             <input type="checkbox" data-campo="aperto" ${g.aperto ? 'checked' : ''}>
             <span class="interruttore__leva" style="width:42px;height:25px"></span>
           </label>
-          <input class="input" type="time" step="300" data-campo="apertura" value="${esc(g.apertura)}">
-          <input class="input" type="time" step="300" data-campo="pausaDa" value="${esc(g.pausaDa || '')}">
-          <input class="input" type="time" step="300" data-campo="pausaA" value="${esc(g.pausaA || '')}">
-          <input class="input" type="time" step="300" data-campo="chiusura" value="${esc(g.chiusura)}">
+          <input class="input input--ora" type="text" inputmode="numeric" maxlength="5" autocomplete="off"
+                 data-campo="apertura" aria-label="apre" value="${esc(ui.normalizzaOra(g.apertura))}">
+          <input class="input input--ora" type="text" inputmode="numeric" maxlength="5" autocomplete="off"
+                 data-campo="pausaDa" aria-label="pausa da" placeholder="--:--" value="${esc(ui.normalizzaOra(g.pausaDa || ''))}">
+          <input class="input input--ora" type="text" inputmode="numeric" maxlength="5" autocomplete="off"
+                 data-campo="pausaA" aria-label="pausa a" placeholder="--:--" value="${esc(ui.normalizzaOra(g.pausaA || ''))}">
+          <input class="input input--ora" type="text" inputmode="numeric" maxlength="5" autocomplete="off"
+                 data-campo="chiusura" aria-label="chiude" value="${esc(ui.normalizzaOra(g.chiusura))}">
         </div>`;
       }).join('')}
 
@@ -6826,21 +7582,21 @@ async function dOrari(p) {
         </div>
         <div class="campo" style="margin:0">
           <label class="campo__etichetta" for="ap-apertura">Apre</label>
-          <input class="input" id="ap-apertura" type="time" step="300" value="09:00">
+          ${ui.campoOra('ap-apertura', '09:00')}
         </div>
         <div class="campo" style="margin:0">
           <label class="campo__etichetta" for="ap-chiusura">Chiude</label>
-          <input class="input" id="ap-chiusura" type="time" step="300" value="19:00">
+          ${ui.campoOra('ap-chiusura', '19:00')}
         </div>
       </div>
       <div class="riga-campi--tre riga-campi" style="margin-top:12px">
         <div class="campo" style="margin:0">
           <label class="campo__etichetta" for="ap-pausa-da">Pausa da</label>
-          <input class="input" id="ap-pausa-da" type="time" step="300" value="">
+          ${ui.campoOra('ap-pausa-da', '')}
         </div>
         <div class="campo" style="margin:0">
           <label class="campo__etichetta" for="ap-pausa-a">Pausa a</label>
-          <input class="input" id="ap-pausa-a" type="time" step="300" value="">
+          ${ui.campoOra('ap-pausa-a', '')}
         </div>
         <div class="campo" style="margin:0">
           <label class="campo__etichetta" for="ap-motivo">Motivo</label>
@@ -6863,17 +7619,22 @@ async function dOrari(p) {
     p.querySelectorAll('[data-giorno]').forEach(riga => {
       const i = Number(riga.dataset.giorno);
       const leggi = (campo) => riga.querySelector(`[data-campo="${campo}"]`);
+      // Gli orari passano sempre da normalizzaOra: «9», «930», «9.30» sono
+      // tutti orari validi da scrivere in fretta, e diventano 09:00 e 09:30.
+      const ora = (campo, ripiego) => ui.normalizzaOra(leggi(campo).value) || ripiego;
       nuova[i] = {
         aperto: leggi('aperto').checked,
-        apertura: leggi('apertura').value || '09:00',
-        chiusura: leggi('chiusura').value || '19:00',
-        pausaDa: leggi('pausaDa').value || '',
-        pausaA: leggi('pausaA').value || ''
+        apertura: ora('apertura', '09:00'),
+        chiusura: ora('chiusura', '19:00'),
+        pausaDa: ora('pausaDa', ''),
+        pausaA: ora('pausaA', '')
       };
     });
 
     const storti = nuova.filter(g => g.aperto && g.chiusura <= g.apertura);
     if (storti.length) { ui.errore('C\'è un giorno che chiude prima di aprire: controlla'); return; }
+    const pausePazze = nuova.filter(g => g.aperto && g.pausaDa && g.pausaA && g.pausaA <= g.pausaDa);
+    if (pausePazze.length) { ui.errore('C\'è una pausa che finisce prima di cominciare: controlla'); return; }
 
     await cfg.imposta('agenda', { settimana: nuova });
     ui.ok('Orari salvati');
@@ -6936,10 +7697,10 @@ async function dOrari(p) {
 
   p.querySelector('#ap-aggiungi').addEventListener('click', async () => {
     const giorno = p.querySelector('#ap-giorno').value;
-    const apertura = p.querySelector('#ap-apertura').value || '09:00';
-    const chiusura = p.querySelector('#ap-chiusura').value || '19:00';
-    const pausaDa = p.querySelector('#ap-pausa-da').value || '';
-    const pausaA = p.querySelector('#ap-pausa-a').value || '';
+    const apertura = ui.normalizzaOra(p.querySelector('#ap-apertura').value) || '09:00';
+    const chiusura = ui.normalizzaOra(p.querySelector('#ap-chiusura').value) || '19:00';
+    const pausaDa = ui.normalizzaOra(p.querySelector('#ap-pausa-da').value);
+    const pausaA = ui.normalizzaOra(p.querySelector('#ap-pausa-a').value);
     const motivo = p.querySelector('#ap-motivo').value.trim();
 
     if (!giorno) { ui.errore('Scegli il giorno'); return; }
@@ -6982,6 +7743,8 @@ async function dOrari(p) {
   p.querySelectorAll('[data-campo="aperto"]').forEach(c => c.addEventListener('change', () => {
     c.closest('.riga-giorno').classList.toggle('is-chiuso', !c.checked);
   }));
+
+  ui.legaCampiOra(p);
 }
 
 /* ========================== SCHEDA CLIENTE ========================== */
