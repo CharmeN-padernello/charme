@@ -1115,6 +1115,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .pannello--ampio .scheda-colonne__elenco { max-height: 44vh; overflow-y: auto; padding-right: 6px; }
 }
 
+/* --- appuntamento fisso nella scheda cliente --- */
+.riquadro-fisso {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 14px; margin-bottom: 14px;
+  border-radius: var(--raggio-s);
+  background: var(--salvia-tenue); border: 1px solid rgba(126,148,120,.34);
+  font-size: 14px; line-height: 1.45; color: #3F5239;
+}
+.riquadro-fisso > span:first-child { font-size: 18px; }
+
 </style>
 </head>
 <body>
@@ -4067,6 +4077,38 @@ let dataCorrente = new Date();
 let apriNuovo = null;      // iniettata da app.js per evitare dipendenze circolari
 let apriCliente = null;
 let temporizzatoreAdesso = null;
+let giornoDisegnato = null;      // per accorgersi del passaggio di mezzanotte
+let ridisegnoRimandato = false;  // c'è un ridisegno in attesa che lei finisca di scrivere
+
+/** Sta scrivendo in una casella che un ridisegno le porterebbe via? */
+function staScrivendo() {
+  const a = document.activeElement;
+  return !!(a && a.matches && a.matches('[data-titolo-giorno]'));
+}
+
+/**
+ * Sposta la riga rossa dell'ora senza rifare l'agenda.
+ * Prima questo lo faceva un ridisegno completo ogni minuto, e chi stava
+ * scrivendo il promemoria della giornata se lo vedeva sparire sotto le dita.
+ */
+function aggiornaOraAdesso() {
+  clearTimeout(temporizzatoreAdesso);
+  temporizzatoreAdesso = setTimeout(aggiornaOraAdesso, 60000);
+
+  // A mezzanotte «oggi» cambia davvero: lì il ridisegno serve.
+  if (giornoDisegnato && giornoDisegnato !== dayKey(new Date())) { disegna(); return; }
+
+  const riga = document.querySelector('.agenda__adesso');
+  if (!riga) return;
+  const griglia = store.estremiGriglia();
+  const cfgA = cfg.get('agenda');
+  const ppm = cfgA.densita === 'compatta' ? 1.1 : (cfgA.minutiPerPixel || 1.6);
+  const adesso = new Date();
+  const m = adesso.getHours() * 60 + adesso.getMinutes();
+  if (m < griglia.da || m > griglia.a) { riga.hidden = true; return; }
+  riga.hidden = false;
+  riga.style.top = `${(m - griglia.da) * ppm}px`;
+}
 
 function inizializza({ suNuovoAppuntamento, suApriCliente }) {
   apriNuovo = suNuovoAppuntamento;
@@ -4123,6 +4165,12 @@ function dataVisualizzata() { return new Date(dataCorrente); }
 /* ---------- disegno ---------- */
 
 async function disegna() {
+  /* Mai ridisegnare sotto le dita di chi sta scrivendo il promemoria della
+     giornata: si perderebbero testo e cursore. Il ridisegno si rimanda a
+     quando esce dalla casella. */
+  if (staScrivendo()) { ridisegnoRimandato = true; return; }
+  ridisegnoRimandato = false;
+
   const agendaCfg = cfg.get('agenda');
   const valuta = cfg.get('incassi').valuta;
   const quanti = Math.max(1, Number(agendaCfg.vistaGiorni) || 1);
@@ -4321,16 +4369,29 @@ async function disegna() {
 
   contenitore.innerHTML = html;
 
-  /* Il titolo si salva uscendo dal campo. Di proposito non fa ridisegnare
-     l'agenda: ridisegnare mentre si scrive porterebbe via il fuoco. */
+  /* Il promemoria della giornata si salva DA SOLO mentre lei scrive, non solo
+     uscendo dal campo. Tre reti: si salva a mano a mano, i ridisegni sono
+     rimandati finché ha il cursore dentro, e uscendo si salva comunque.
+     Prima ne bastava uno qualsiasi per portarle via quello che aveva scritto. */
   contenitore.querySelectorAll('[data-titolo-giorno]').forEach(campo => {
-    campo.addEventListener('change', async () => {
+    const salva = async (avvisa) => {
       const scritto = await store.salvaTitoloDelGiorno(campo.dataset.titoloGiorno, campo.value);
-      campo.value = scritto;
-      campo.closest('.titolo-giorno').classList.toggle('is-pieno', !!scritto);
-      ui.ok(scritto ? 'Promemoria del giorno salvato' : 'Promemoria tolto');
-    });
+      const contenitoreCampo = campo.closest('.titolo-giorno');
+      if (contenitoreCampo) contenitoreCampo.classList.toggle('is-pieno', !!scritto);
+      if (avvisa) {
+        campo.value = scritto;
+        ui.ok(scritto ? 'Promemoria del giorno salvato' : 'Promemoria tolto');
+      }
+      return scritto;
+    };
+
+    campo.addEventListener('input', debounce(() => salva(false), 700));
+    campo.addEventListener('change', () => salva(true));
     campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') campo.blur(); });
+    campo.addEventListener('blur', () => {
+      // Il ridisegno messo in attesa mentre scriveva può partire adesso.
+      if (ridisegnoRimandato) setTimeout(() => { if (!staScrivendo()) disegna(); }, 120);
+    });
   });
 
   const pillolaPonte = document.getElementById('avviso-ponte');
@@ -4350,8 +4411,12 @@ async function disegna() {
     contenitore.dataset.giaScorso = '1';
   }
 
+  /* Ogni minuto si sposta soltanto la riga rossa dell'ora. Il ridisegno
+     completo, che prima girava qui, era la causa del promemoria che spariva
+     mentre lo si scriveva. */
+  giornoDisegnato = dayKey(new Date());
   clearTimeout(temporizzatoreAdesso);
-  temporizzatoreAdesso = setTimeout(() => { if (giornate.some(g => isToday(g.data))) disegna(); }, 60000);
+  temporizzatoreAdesso = setTimeout(aggiornaOraAdesso, 60000);
 }
 
 /** Un appuntamento disegnato al suo posto nella colonna della sua giornata. */
@@ -4440,7 +4505,12 @@ function disponiInColonne(appuntamenti) {
 
 /* ---------- dettaglio appuntamento ---------- */
 
-async function mostraDettaglio(id) {
+/**
+ * Il pannello di un appuntamento: stato, WhatsApp, promemoria, elimina, modifica.
+ * @param alChiudere chiamata alla chiusura — serve a chi lo apre da fuori
+ *        dall'agenda (la scheda cliente) per rinfrescarsi dietro.
+ */
+async function mostraDettaglio(id, alChiudere = null) {
   const a = await store.leggiAppuntamento(id);
   if (!a) return;
   // Un impegno personale non ha cliente, servizi né WhatsApp: ha un pannello suo.
@@ -4450,6 +4520,8 @@ async function mostraDettaglio(id) {
   const valuta = cfg.get('incassi').valuta;
   const d = daIsoLocale(a.inizio);
   const fine = new Date(d.getTime() + a.durata * 60000);
+
+  let incatenato = false;   // questo pannello si sta chiudendo per aprirne un altro
 
   const servizi = (a.servizi || []).map(s =>
     `<div class="riga-info">
@@ -4539,9 +4611,13 @@ async function mostraDettaglio(id) {
     `,
     azioni: `
       <button class="btn btn--fantasma" data-azione="elimina" style="margin-right:auto;color:var(--rosso)">Elimina</button>
-      ${senzaScheda ? '' : '<button class="btn btn--fantasma" data-azione="cliente">Scheda cliente</button>'}
+      ${(senzaScheda || alChiudere) ? '' : '<button class="btn btn--fantasma" data-azione="cliente">Scheda cliente</button>'}
       <button class="btn btn--principale" data-azione="modifica">Modifica</button>
-    `
+    `,
+    /* Chi ci ha aperti da fuori (la scheda cliente) vuole rinfrescarsi quando
+       questo pannello si chiude — ma NON quando si chiude per aprirne un altro,
+       o si troverebbe due pannelli che si accavallano. */
+    alChiudere: () => { if (!incatenato && alChiudere) alChiudere(); }
   });
 
   p.elemento.querySelectorAll('[data-stato]').forEach(b => b.addEventListener('click', async () => {
@@ -4563,6 +4639,7 @@ async function mostraDettaglio(id) {
 
   const creaScheda = p.elemento.querySelector('[data-azione="crea-scheda"]');
   if (creaScheda) creaScheda.addEventListener('click', () => {
+    incatenato = true;
     p.chiudi();
     setTimeout(() => moduloCreaScheda(a), 250);
   });
@@ -4623,7 +4700,9 @@ async function mostraDettaglio(id) {
     if (sicuro) { await store.eliminaAppuntamento(id); ui.ok('Appuntamento eliminato'); p.chiudi(); }
   });
 
-  p.elemento.querySelector('[data-azione="cliente"]').addEventListener('click', () => {
+  const vaiAllaScheda = p.elemento.querySelector('[data-azione="cliente"]');
+  if (vaiAllaScheda) vaiAllaScheda.addEventListener('click', () => {
+    incatenato = true;
     p.chiudi();
     if (cliente) setTimeout(() => apriCliente(cliente.id), 260);
   });
@@ -4633,11 +4712,13 @@ async function mostraDettaglio(id) {
       const scelta = await chiediSuLaSerie(a, 'spostare');
       if (scelta === 'annulla') return;
       if (scelta === 'tutti') {
+        incatenato = true;
         p.chiudi();
         setTimeout(() => moduloSpostaSerie(a), 250);
         return;
       }
     }
+    incatenato = true;
     p.chiudi();
     setTimeout(() => apriNuovo({ appuntamento: a }), 260);
   });
@@ -5076,7 +5157,7 @@ async function pannelloProposte() {
   });
 }
 
-return { apriRicercaScheda, dataVisualizzata, disegna, inizializza, moduloImpegno, mostraDettaglio, pannelloProposte, vaiA };
+return { aggiornaOraAdesso, apriRicercaScheda, dataVisualizzata, disegna, inizializza, moduloImpegno, mostraDettaglio, pannelloProposte, vaiA };
 })();
 
 /* ======================= js/views/clienti.js ======================= */
@@ -5090,10 +5171,12 @@ const ui = MOD.ui;
 const { esc, iniziali, nomeCompleto, telefonoLeggibile, tempoFa, euro, durataUmana, dataBreve, dataEstesa, daIsoLocale, isoLocale, ora: oraDi, debounce, normalizza, dayKey, fromDayKey, addDays } = MOD.util;
 
 let apriNuovoAppuntamento = null;
+let apriAppuntamento = null;   // il pannello dell'agenda, iniettato da app.js
 let filtro = '';
 
-function inizializza({ suNuovoAppuntamento }) {
+function inizializza({ suNuovoAppuntamento, suApriAppuntamento }) {
   apriNuovoAppuntamento = suNuovoAppuntamento;
+  apriAppuntamento = suApriAppuntamento;
 
   const ricerca = document.getElementById('ricerca-clienti');
   ricerca.addEventListener('input', debounce(() => { filtro = ricerca.value; disegna(); }, 130));
@@ -5179,6 +5262,11 @@ async function scheda(id) {
   const s = await store.storicoCliente(id);
   const valuta = cfg.get('incassi').valuta;
 
+  // Appuntamento fisso: quante occorrenze sono già coperte e fino a quando.
+  const fisso = !!(c.ricorrenza && c.ricorrenza.attiva && c.ricorrenza.serieId);
+  const occorrenze = fisso ? await store.occorrenzeSerie(c.ricorrenza.serieId) : [];
+  const copertoFinoA = occorrenze.length ? occorrenze[occorrenze.length - 1].giorno : null;
+
   const storico = s.passati.length
     ? s.passati.slice(0, 40).map(a => {
         const d = daIsoLocale(a.inizio);
@@ -5245,6 +5333,18 @@ async function scheda(id) {
           📌 Segna un promemoria per la prossima volta
         </button>`}
 
+      ${fisso ? `
+        <div class="riquadro-fisso">
+          <span>↻</span>
+          <div style="flex:1;min-width:0">
+            <strong>Appuntamento fisso</strong><br>
+            ${occorrenze.length
+              ? `${occorrenze.length} ${occorrenze.length === 1 ? 'volta già in agenda' : 'volte già in agenda'}, fino al ${esc(dataBreve(fromDayKey(copertoFinoA)))}`
+              : 'nessuna occorrenza in agenda al momento'}
+          </div>
+          <button class="btn btn--fantasma btn--piccolo" data-x="propaga" type="button">Propaga app. fissi</button>
+        </div>` : ''}
+
       <div class="scheda-statistiche">
         <div class="statistica"><div class="statistica__valore">${s.visite}</div><div class="statistica__etichetta">visite</div></div>
         <div class="statistica"><div class="statistica__valore">${euro(s.totaleSpeso, valuta)}</div><div class="statistica__etichetta">totale</div></div>
@@ -5309,9 +5409,77 @@ async function scheda(id) {
     p.chiudi(); setTimeout(() => scheda(id), 260);
   });
 
+  /* Le due colonne si toccano allo stesso modo ma non fanno la stessa cosa.
+     Una visita passata apre il pannellino della nota e del «ripeti». Un
+     appuntamento ancora da fare apre lo STESSO pannello dell'agenda: da lì si
+     elimina, si sposta, e se è un appuntamento fisso l'app chiede se vale solo
+     per quello o per tutti. Nessuna logica riscritta qui dentro. */
   ui.su(p.elemento, 'click', '[data-visita]', (e, el) => {
     const visita = s.tutti.find(x => x.id === el.dataset.visita);
-    if (visita) pannelloVisita(visita, c, () => { p.chiudi(); setTimeout(() => scheda(id), 260); });
+    if (!visita) return;
+    const rinfresca = () => { p.chiudi(); setTimeout(() => scheda(id), 260); };
+    const futuro = s.futuri.some(x => x.id === visita.id);
+    if (futuro && apriAppuntamento) apriAppuntamento(visita.id, rinfresca);
+    else pannelloVisita(visita, c, rinfresca);
+  });
+
+  /* Propaga: rimette in agenda le occorrenze mancanti dell'appuntamento fisso
+     fino all'orizzonte dei tre mesi. Non ricrea quelle cancellate a mano —
+     l'app se le ricorda apposta — non duplica quelle già spostate e salta i
+     giorni di chiusura. Dice sempre cos'ha fatto: serve anche a capire perché
+     il calendario era vuoto, non solo a riempirlo. */
+  const propaga = p.elemento.querySelector('[data-x="propaga"]');
+  if (propaga) propaga.addEventListener('click', async () => {
+    propaga.disabled = true;
+    propaga.textContent = 'Propago…';
+    let esito;
+    try {
+      esito = await store.generaOccorrenze(c);
+    } catch (errore) {
+      ui.errore('Non sono riuscito a propagare: ' + (errore.message || 'errore sconosciuto'));
+      propaga.disabled = false; propaga.textContent = 'Propaga app. fissi';
+      return;
+    }
+
+    const dopo = await store.occorrenzeSerie(c.ricorrenza.serieId);
+    const fino = dopo.length ? dataBreve(fromDayKey(dopo[dopo.length - 1].giorno)) : null;
+    const saltate = (c.ricorrenza.saltate || []).length;
+
+    const righe = [];
+    // Attenzione: .testo-lungo conserva gli a capo, quindi niente rientri qui dentro.
+    const coperta = dopo.length
+      ? `Ci sono ${dopo.length} appuntamenti in agenda, fino al ${esc(fino)}.`
+      : 'Non c\'è nessuna occorrenza da creare da qui in avanti.';
+    righe.push(esito.create
+      ? `<p class="testo-lungo"><strong>${esito.create} ${esito.create === 1 ? 'appuntamento creato' : 'appuntamenti creati'}.</strong> Adesso ${esc(nomeCompleto(c))} è coperta fino al ${esc(fino)}.</p>`
+      : `<p class="testo-lungo"><strong>Era già tutto a posto.</strong> ${coperta}</p>`);
+
+    if (esito.saltatePerChiusura && esito.saltatePerChiusura.length) {
+      righe.push(`<div class="avviso-riquadro avviso-riquadro--info" style="margin-top:12px">
+        <span>🔒</span><div><strong>Saltati i giorni di chiusura</strong>
+        ${esito.saltatePerChiusura.map(x => esc(dataBreve(fromDayKey(x.giorno || x)))).join(' · ')}</div></div>`);
+    }
+    if (esito.conflitti && esito.conflitti.length) {
+      righe.push(`<div class="avviso-riquadro" style="margin-top:12px">
+        <span>⚠</span><div><strong>Qualcuno si sovrappone</strong>
+        ${esito.conflitti.length} ${esito.conflitti.length === 1 ? 'volta cade' : 'volte cadono'} sopra un altro appuntamento.
+        Sono stati creati lo stesso: li vedi affiancati in agenda e decidi tu.</div></div>`);
+    }
+    if (saltate) {
+      righe.push(`<p class="campo__aiuto" style="margin-top:12px">${saltate} ${saltate === 1 ? 'volta era stata cancellata' : 'volte erano state cancellate'} a mano con «solo questo»: quelle non tornano, altrimenti il tasto rimetterebbe in agenda proprio ciò che avevi tolto. Se ne servisse una, rifissala a mano.</p>`);
+    }
+
+    const riepilogo = ui.pannello({
+      titolo: 'Appuntamenti fissi propagati',
+      sottotitolo: nomeCompleto(c),
+      contenuto: righe.join(''),
+      azioni: '<button class="btn btn--principale" data-x="ok">Ho capito</button>'
+    });
+    riepilogo.elemento.querySelector('[data-x="ok"]').addEventListener('click', () => {
+      riepilogo.chiudi();
+      p.chiudi();
+      setTimeout(() => scheda(id), 260);
+    });
   });
 
   p.elemento.querySelector('[data-x="appuntamento"]').addEventListener('click', () => {
@@ -6850,7 +7018,7 @@ const ponte = MOD.ponte;
 const ui = MOD.ui;
 const { esc, euro, durataUmana, scaricaFile, nomeFileConData, dataNumerica, dataBreve, dataEstesa, dayKey, fromDayKey, nomeCompleto, ora: oraDi } = MOD.util;
 
-const VERSIONE_APP = '1.5.0';
+const VERSIONE_APP = '1.5.1';
 
 const SEZIONI = [
   { id: 'negozio',   emoji: '🏪', titolo: 'Negozio' },
@@ -8318,7 +8486,13 @@ async function avvia() {
       suNuovoAppuntamento: (opzioni) => nuovo.apri(opzioni),
       suApriCliente: (id) => clienti.scheda(id)
     });
-    clienti.inizializza({ suNuovoAppuntamento: (opzioni) => nuovo.apri(opzioni) });
+    clienti.inizializza({
+      suNuovoAppuntamento: (opzioni) => nuovo.apri(opzioni),
+      // La scheda cliente riusa il pannello dell'agenda invece di rifarne uno
+      // suo: elimina, sposta e le domande sulle serie stanno scritte in un
+      // posto solo, quindi si comportano allo stesso modo dovunque si tocchi.
+      suApriAppuntamento: (id, alChiudere) => agenda.mostraDettaglio(id, alChiudere)
+    });
     promemoria.inizializza();
     impostazioni.inizializza({ suListinoCambiato: () => agenda.disegna() });
 
